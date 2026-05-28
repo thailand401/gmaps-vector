@@ -1,0 +1,359 @@
+{
+  "categories": [
+    {
+      "category": "Trạng thái tài xế",
+      "intents": [
+        {
+          "intent": "DRIVER_BORED",
+          "priority": "Low",
+          "description": "Đường dài, không kích thích, cần giải trí"
+        },
+        {
+          "intent": "DRIVER_FATIGUED",
+          "priority": "Critical",
+          "description": "Buồn ngủ sau lái xe dài, nguy hiểm"
+        },
+        {
+          "intent": "DRIVER_STRESSED",
+          "priority": "High",
+          "description": "Căng thẳng do kẹt xe hoặc áp lực thời gian"
+        },
+        {
+          "intent": "DRIVER_RUSHING",
+          "priority": "High",
+          "description": "Đang vội, ưu tiên tốc độ hơn thoải mái"
+        },
+        {
+          "intent": "DRIVER_LOST",
+          "priority": "High",
+          "description": "Mất phương hướng, cần định vị lại"
+        },
+        {
+          "intent": "DRIVER_HUNGRY",
+          "priority": "Medium",
+          "description": "Cần dừng ăn, tìm quán trên đường"
+        },
+        {
+          "intent": "DRIVER_SICK",
+          "priority": "Critical",
+          "description": "Không khỏe, cần dừng hoặc tìm y tế"
+        },
+        {
+          "intent": "DRIVER_NEEDS_BREAK",
+          "priority": "High",
+          "description": "Lái liên tục quá lâu, cần nghỉ ngơi"
+        }
+      ]
+    },
+    {
+      "category": "Điều hướng",
+      "intents": [
+        {
+          "intent": "ROUTE_START",
+          "priority": "Medium",
+          "description": "Bắt đầu hành trình mới đến điểm đến"
+        },
+        {
+          "intent": "ROUTE_RECALCULATE",
+          "priority": "High",
+          "description": "Lệch đường, cần tính lại lộ trình"
+        },
+        {
+          "intent": "ROUTE_ALTERNATIVE",
+          "priority": "High",
+          "description": "Kẹt phía trước, hệ thống đề xuất đường khác"
+        },
+        {
+          "intent": "ROUTE_SHORTCUT",
+          "priority": "Medium",
+          "description": "Tài xế hỏi đường tắt tường minh"
+        },
+        {
+          "intent": "WAYPOINT_ADD",
+          "priority": "Medium",
+          "description": "Thêm điểm ghé qua giữa hành trình"
+        },
+        {
+          "intent": "ETA_QUERY",
+          "priority": "Medium",
+          "description": "Hỏi thời gian dự kiến đến nơi"
+        },
+        {
+          "intent": "DISTANCE_QUERY",
+          "priority": "Low",
+          "description": "Hỏi khoảng cách còn lại đến điểm đến"
+        },
+        {
+          "intent": "LANDMARK_QUERY",
+          "priority": "Low",
+          "description": "Hỏi về địa danh, mốc đường xung quanh"
+        },
+        {
+          "intent": "DROPOFF_NAVIGATE",
+          "priority": "Medium",
+          "description": "Tìm điểm trả người hoặc hàng hoá"
+        }
+      ]
+    },
+    {
+      "category": "Thông tin giao thông",
+      "intents": [
+        {
+          "intent": "CONGESTION_QUERY",
+          "priority": "Medium",
+          "description": "Hỏi tình trạng kẹt xe đoạn đường cụ thể"
+        },
+        {
+          "intent": "CONGESTION_AHEAD",
+          "priority": "High",
+          "description": "Hệ thống phát hiện kẹt nặng phía trước"
+        },
+        {
+          "intent": "INCIDENT_QUERY",
+          "priority": "High",
+          "description": "Hỏi tai nạn hoặc sự cố trên tuyến"
+        },
+        {
+          "intent": "INCIDENT_REPORT",
+          "priority": "High",
+          "description": "Tài xế báo cáo sự cố đang xảy ra"
+        },
+        {
+          "intent": "ROAD_CLOSURE_QUERY",
+          "priority": "High",
+          "description": "Hỏi đoạn đường có bị chặn không"
+        },
+        {
+          "intent": "TRAFFIC_TREND_QUERY",
+          "priority": "Low",
+          "description": "Giờ này tuyến đường thường như thế nào"
+        },
+        {
+          "intent": "BRIDGE_STATUS_QUERY",
+          "priority": "Medium",
+          "description": "Trạng thái lưu thông qua cầu cụ thể"
+        },
+        {
+          "intent": "CONSTRUCTION_ZONE",
+          "priority": "Medium",
+          "description": "Thông tin công trình đang thi công trên tuyến"
+        },
+        {
+          "intent": "ROAD_CONDITION_QUERY",
+          "priority": "Medium",
+          "description": "Chất lượng mặt đường: ổ gà, trơn, bụi..."
+        }
+      ]
+    },
+    {
+      "category": "An toàn & Cảnh báo",
+      "intents": [
+        {
+          "intent": "SPEED_LIMIT_ALERT",
+          "priority": "Critical",
+          "description": "Đang chạy quá tốc độ cho phép"
+        },
+        {
+          "intent": "SPEED_CAMERA_ALERT",
+          "priority": "Critical",
+          "description": "Sắp đến camera phạt nguội"
+        },
+        {
+          "intent": "SCHOOL_ZONE_ALERT",
+          "priority": "High",
+          "description": "Vào khu vực trường học, giờ tan trường"
+        },
+        {
+          "intent": "ACCIDENT_AHEAD_ALERT",
+          "priority": "Critical",
+          "description": "Có tai nạn phía trước trên lộ trình"
+        },
+        {
+          "intent": "HAZARD_ROAD_ALERT",
+          "priority": "Critical",
+          "description": "Đường nguy hiểm: ổ gà lớn, đá rơi, trơn"
+        },
+        {
+          "intent": "FLOOD_ALERT",
+          "priority": "Critical",
+          "description": "Phát hiện ngập nước trên tuyến đang đi"
+        },
+        {
+          "intent": "WEATHER_HAZARD_ALERT",
+          "priority": "High",
+          "description": "Sương mù, mưa lớn ảnh hưởng tầm nhìn"
+        },
+        {
+          "intent": "EMERGENCY_VEHICLE_ALERT",
+          "priority": "Critical",
+          "description": "Xe ưu tiên (cứu thương, cảnh sát) đang đến"
+        },
+        {
+          "intent": "WRONG_WAY_ALERT",
+          "priority": "Critical",
+          "description": "Phát hiện đang đi ngược chiều"
+        },
+        {
+          "intent": "FATIGUE_DRIVING_ALERT",
+          "priority": "Critical",
+          "description": "Phát hiện hành vi lái buồn ngủ qua cảm biến"
+        }
+      ]
+    },
+    {
+      "category": "Tiện ích trên đường",
+      "intents": [
+        {
+          "intent": "FUEL_STATION_SEARCH",
+          "priority": "High",
+          "description": "Tìm trạm xăng dầu gần nhất"
+        },
+        {
+          "intent": "EV_CHARGING_SEARCH",
+          "priority": "High",
+          "description": "Tìm trạm sạc xe điện (VinFast, Tesla...)"
+        },
+        {
+          "intent": "PARKING_SEARCH",
+          "priority": "Medium",
+          "description": "Tìm bãi đỗ xe tại điểm đến hoặc lân cận"
+        },
+        {
+          "intent": "REST_AREA_SEARCH",
+          "priority": "High",
+          "description": "Tìm trạm dừng nghỉ hoặc điểm nghỉ ngơi"
+        },
+        {
+          "intent": "FOOD_SEARCH",
+          "priority": "Medium",
+          "description": "Tìm nhà hàng, quán ăn gần vị trí hiện tại"
+        },
+        {
+          "intent": "CONVENIENCE_STORE_SEARCH",
+          "priority": "Low",
+          "description": "Tìm cửa hàng tiện lợi để mua nhanh"
+        },
+        {
+          "intent": "TOILET_SEARCH",
+          "priority": "High",
+          "description": "Tìm nhà vệ sinh công cộng hoặc trong quán"
+        },
+        {
+          "intent": "CAR_SERVICE_SEARCH",
+          "priority": "High",
+          "description": "Tìm garage, vá xe, cứu hộ đường bộ"
+        },
+        {
+          "intent": "ATM_SEARCH",
+          "priority": "Low",
+          "description": "Tìm cây ATM gần vị trí hiện tại"
+        }
+      ]
+    },
+    {
+      "category": "Trạng thái xe",
+      "intents": [
+        {
+          "intent": "VEHICLE_BREAKDOWN",
+          "priority": "Critical",
+          "description": "Xe chết máy giữa đường, cần cứu hộ ngay"
+        },
+        {
+          "intent": "LOW_FUEL_CRITICAL",
+          "priority": "Critical",
+          "description": "Xăng còn dưới 10km, khẩn cấp hơn FUEL_SEARCH"
+        },
+        {
+          "intent": "TIRE_WARNING",
+          "priority": "Critical",
+          "description": "Cảnh báo lốp: xẹp, áp suất thấp, nổ"
+        },
+        {
+          "intent": "ENGINE_OVERHEAT",
+          "priority": "Critical",
+          "description": "Động cơ quá nhiệt, kẹt lâu hoặc dầu máy thấp"
+        },
+        {
+          "intent": "TOLL_PAYMENT",
+          "priority": "Medium",
+          "description": "Thanh toán phí cầu đường qua ETC hoặc tiền mặt"
+        },
+        {
+          "intent": "VEHICLE_HEALTH_QUERY",
+          "priority": "Medium",
+          "description": "Hỏi tổng quát tình trạng xe, đèn cảnh báo"
+        }
+      ]
+    },
+    {
+      "category": "Đặc thù Việt Nam",
+      "intents": [
+        {
+          "intent": "BOT_TOLL_QUERY",
+          "priority": "Medium",
+          "description": "Hỏi vị trí, phí, giờ cao điểm trạm BOT"
+        },
+        {
+          "intent": "FLOOD_ROAD_QUERY",
+          "priority": "High",
+          "description": "Hỏi tuyến đường ngập mùa mưa HCM/HN"
+        },
+        {
+          "intent": "MOTORBIKE_CONFLICT_ALERT",
+          "priority": "High",
+          "description": "Cảnh báo xung đột làn xe máy – ô tô"
+        },
+        {
+          "intent": "FERRY_SCHEDULE_QUERY",
+          "priority": "Medium",
+          "description": "Lịch phà, thời gian chờ, điểm bến phà"
+        },
+        {
+          "intent": "PROVINCIAL_CHECKPOINT",
+          "priority": "Medium",
+          "description": "Trạm kiểm soát liên tỉnh: giấy tờ, hàng"
+        },
+        {
+          "intent": "TRUCK_RESTRICTION_QUERY",
+          "priority": "High",
+          "description": "Giờ cấm tải trọng vào nội đô, cung đường"
+        }
+      ]
+    },
+    {
+      "category": "Tương tác & Giải trí",
+      "intents": [
+        {
+          "intent": "MUSIC_REQUEST",
+          "priority": "Low",
+          "description": "Yêu cầu bật nhạc, thể loại, bài cụ thể"
+        },
+        {
+          "intent": "CALL_CONTACT",
+          "priority": "Medium",
+          "description": "Gọi điện hands-free cho danh bạ"
+        },
+        {
+          "intent": "NEWS_BRIEFING",
+          "priority": "Low",
+          "description": "Đọc tin tức tóm tắt trên đường"
+        },
+        {
+          "intent": "TRIVIA_GAME",
+          "priority": "Low",
+          "description": "Câu hỏi vui khi DRIVER_BORED trên đường dài"
+        },
+        {
+          "intent": "TRIP_SHARE",
+          "priority": "Medium",
+          "description": "Chia sẻ vị trí và ETA với người thân"
+        },
+        {
+          "intent": "VOICE_NOTE_RECORD",
+          "priority": "Low",
+          "description": "Ghi âm ghi chú tay không rời vô lăng"
+        }
+      ]
+    }
+  ]
+}
