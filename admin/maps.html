@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Locations Map</title>
+    <link rel="stylesheet" href="css/maps.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Locations Map</h1>
+        <div id="gallery" class="gallery">
+            <div class="loading">Đang tải vị trí...</div>
+        </div>
+        <div class="coordinates"></div>
+        <div class="toolbar">
+            <select id="Cities">
+                <option value="all">-- Cities --</option>
+                <option value="-1">-- Tạo Mới --</option>
+            </select>
+            <select id="Districts">
+                <option value="all">-- Districts --</option>
+                <option value="-2">-- Tạo Mới --</option>
+            </select>
+            <select id="Streets">
+                <option value="all">-- Streets --</option>
+                <option value="-3">-- Tạo Mới --</option>
+            </select>
+        </div>
+        <div id="modal" class="modal"></div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/maps.js"></script>
+</body>
+</html>

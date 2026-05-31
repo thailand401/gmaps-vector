@@ -1,5 +1,5 @@
 {
-  "categories": [
+  "data": [
     {
       "category": "Trạng thái tài xế",
       "category_id": "DRIVER_STATUS",
@@ -428,6 +428,24 @@
           "intent": "VOICE_NOTE_RECORD",
           "priority": "Low",
           "description": "Ghi âm ghi chú tay không rời vô lăng",
+          "category_id": "INTERACTION_ENTERTAINMENT"
+        },
+        {
+          "intent": "FINANCE_MANAGEMENT",
+          "priority": "Low",
+          "description": "Quản lý tài chính cá nhân trên tuyến đường",
+          "category_id": "INTERACTION_ENTERTAINMENT"
+        },
+        {
+          "intent": "FINANCE_REPORT",
+          "priority": "Low",
+          "description": "Cập nhật báo cáo tài chính trên tuyến đường",
+          "category_id": "INTERACTION_ENTERTAINMENT"
+        },
+        {
+          "intent": "JOKE_TELLING",
+          "priority": "Low",
+          "description": "Kể chuyện cười khi tài xế cần giải trí",
           "category_id": "INTERACTION_ENTERTAINMENT"
         }
       ]
