@@ -223,6 +223,65 @@ h1 {
     margin: 6px 0;
 }
 
+/* ==================== EDITOR MODES ==================== */
+
+body.mode-create .gallery,
+body.mode-create .gallery * { cursor: crosshair; }
+
+body.mode-move .pointr { cursor: grab; }
+body.mode-move .pointr.active { cursor: grabbing; }
+
+/* ==================== POINTR SUB-MENU ==================== */
+
+.pointr-submenu {
+    position: fixed;
+    z-index: 150;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+    min-width: 130px;
+    padding: 4px 0;
+    pointer-events: auto;
+}
+
+.pointr-submenu button {
+    background: none;
+    border: none;
+    padding: 7px 14px;
+    text-align: left;
+    font-size: 12px;
+    cursor: pointer;
+    color: #333;
+    white-space: nowrap;
+}
+
+.pointr-submenu button:hover { background: #f0f0f0; }
+
+.pointr-submenu .btn-danger { color: #d32f2f; }
+.pointr-submenu .btn-danger:hover { background: #fdecea; }
+
+/* ==================== MODAL BOOL OPTIONS ==================== */
+
+.bool-options {
+    display: flex;
+    gap: 24px;
+    padding: 8px 0;
+}
+
+.radio-label {
+    display: flex;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.radio-label input[type="radio"] { cursor: pointer; margin: 0; }
+
 /* ==================== MODAL ==================== */
 
 .modal {

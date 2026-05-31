@@ -192,9 +192,11 @@ async function loadCities() {
 async function loadDistricts(cityId = null) {
     const districtSelect = document.getElementById('Districts');
     const streetSelect = document.getElementById('Streets');
-    // Reset downstream
-    while (districtSelect.options.length > 1) districtSelect.remove(1);
-    while (streetSelect.options.length > 1) streetSelect.remove(1);
+    // Reset downstream - preserve negative options (Tạo Mới)
+    for (let i = districtSelect.options.length - 1; i > 0; i--)
+        if (parseInt(districtSelect.options[i].value) >= 0) districtSelect.remove(i);
+    for (let i = streetSelect.options.length - 1; i > 0; i--)
+        if (parseInt(streetSelect.options[i].value) >= 0) streetSelect.remove(i);
     if (!cityId) return;
     try {
         const districts = await apiClient.getDistricts(cityId);
@@ -207,7 +209,8 @@ async function loadDistricts(cityId = null) {
 // Hàm load Streets theo district (hoặc city)
 async function loadStreets(districtId = null, cityId = null) {
     const streetSelect = document.getElementById('Streets');
-    while (streetSelect.options.length > 1) streetSelect.remove(1);
+    for (let i = streetSelect.options.length - 1; i > 0; i--)
+        if (parseInt(streetSelect.options[i].value) >= 0) streetSelect.remove(i);
     if (!districtId && !cityId) return;
     try {
         const streets = await apiClient.getStreets(districtId, cityId);
@@ -328,6 +331,42 @@ function enableGalleryDragScroll() {
 let pointrIdCounter = 0;
 const pointrData = new Map();
 let activePointrId = null;
+let isDragging = false;
+
+// ==================== STREET POINTS LIST ====================
+let streetPointsList = []; // [{ id, streetId, x, y, ban, speed, park, lane, tool, flooding }]
+
+function getCurrentStreetId() {
+    const val = document.getElementById('Streets').value;
+    const parsed = parseInt(val);
+    return (!isNaN(parsed) && parsed > 0) ? parsed : null;
+}
+
+function logStreetPoints() {
+    console.log('[streetPointsList]', JSON.parse(JSON.stringify(streetPointsList)));
+}
+
+function addToStreetPoints(pointrId, x, y) {
+    streetPointsList.push({
+        id: pointrId,
+        streetId: getCurrentStreetId(),
+        x, y,
+        ban: [], speed: null, park: null, lane: null, tool: null, flooding: null
+    });
+    logStreetPoints();
+}
+
+function removeFromStreetPoints(pointrId) {
+    streetPointsList = streetPointsList.filter(p => p.id !== pointrId);
+    logStreetPoints();
+}
+
+function updateStreetPoint(pointrId, key, value) {
+    const point = streetPointsList.find(p => p.id === pointrId);
+    if (!point) return;
+    if (key === 'ban') { point.ban.push(value); } else { point[key] = value; }
+    logStreetPoints();
+}
 
 // Biến cho scroll wheel debounce
 let debounceTimer = null;
@@ -364,28 +403,35 @@ function createPointr(clientX, clientY) {
         timestamp: new Date().toISOString()
     });
 
-    // Thêm event listener để xóa khi double click
-    pointr.addEventListener('dblclick', () => {
-        pointr.remove();
-        pointrData.delete(pointrId);
-        console.log(`Deleted pointr ${pointrId}`);
+    // Ghi nhận vào streetPointsList
+    addToStreetPoints(pointrId, clientX, clientY);
+
+    // Drag-to-move: mousedown khởi động drag trong move mode
+    pointr.addEventListener('mousedown', (e) => {
+        const editor = document.querySelector('#editor');
+        if (editor.value !== 'move') return;
+        activePointrId = pointrId;
+        updateActivePointrVisual();
+        isDragging = true;
+        e.stopPropagation(); // ngăn gallery drag-scroll
+        e.preventDefault();
     });
 
-    // Thêm event listener cho click
+    // Double click → xóa pointr
+    pointr.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        deletePointr(pointrId);
+    });
+
+    // Click → hiện sub-menu (+ select nếu mode move)
     pointr.addEventListener('click', (e) => {
         e.stopPropagation();
         const editor = document.querySelector('#editor');
-        
-        // Nếu ở mode move, set active pointr
         if (editor.value === 'move') {
             activePointrId = pointrId;
             updateActivePointrVisual();
-            console.log(`Selected pointr ${pointrId}`);
-        } else {
-            // Nếu không ở mode move, chỉ log toạ độ
-            const data = pointrData.get(pointrId);
-            console.log(`Pointr ${pointrId}: clientX=${data.initialClientX}, clientY=${data.initialClientY}`);
         }
+        showPointrSubmenu(pointrId, pointr);
     });
 
     return { pointr, pointrId };
@@ -400,6 +446,173 @@ function updateActivePointrVisual() {
             activePointr.classList.add('active');
         }
     }
+}
+
+// ==================== POINTR SUB-MENU ====================
+let submenuEl = null;
+
+function closePointrSubmenu() {
+    if (submenuEl) { submenuEl.remove(); submenuEl = null; }
+}
+
+function showPointrSubmenu(pointrId, anchorEl) {
+    closePointrSubmenu();
+    const rect = anchorEl.getBoundingClientRect();
+    const menu = document.createElement('div');
+    menu.className = 'pointr-submenu';
+
+    // Hiển thị bên phải pointr, căn chỉnh nếu sát mép màn hình
+    const menuLeft = rect.right + 8;
+    const menuTop = rect.top - 4;
+    menu.style.left = menuLeft + 'px';
+    menu.style.top = menuTop + 'px';
+
+    const actions = [
+        { label: 'Add Ban',      action: 'add-ban'      },
+        { label: 'Set Speed',    action: 'set-speed'    },
+        { label: 'Set Park',     action: 'set-park'     },
+        { label: 'Set Lane',     action: 'set-lane'     },
+        { label: 'Set Tool',     action: 'set-tool'     },
+        { label: 'Set Flooding', action: 'set-flooding' },
+        { label: 'Delete',       action: 'delete', danger: true },
+    ];
+
+    actions.forEach(({ label, action, danger }) => {
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        if (danger) btn.classList.add('btn-danger');
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closePointrSubmenu();
+            handleSubmenuAction(action, pointrId);
+        });
+        menu.appendChild(btn);
+    });
+
+    submenuEl = menu;
+    document.querySelector('.coordinates').appendChild(menu);
+}
+
+function handleSubmenuAction(action, pointrId) {
+    switch (action) {
+        case 'add-ban':      showAddBanModal(pointrId);                                              break;
+        case 'set-speed':    showSetIntModal(pointrId, 'speed', 'Set Speed', 'Tốc độ (km/h)');      break;
+        case 'set-park':     showSetBoolModal(pointrId, 'park', 'Set Park');                         break;
+        case 'set-lane':     showSetIntModal(pointrId, 'lane', 'Set Lane', 'Số làn đường');          break;
+        case 'set-tool':     showSetIntModal(pointrId, 'tool', 'Set Tool', 'Tool value');             break;
+        case 'set-flooding': showSetBoolModal(pointrId, 'flooding', 'Set Flooding');                  break;
+        case 'delete':       deletePointr(pointrId);                                                  break;
+    }
+}
+
+function deletePointr(pointrId) {
+    closePointrSubmenu();
+    const data = pointrData.get(pointrId);
+    if (data) { data.element.remove(); pointrData.delete(pointrId); }
+    removeFromStreetPoints(pointrId);
+    if (activePointrId === pointrId) { activePointrId = null; updateActivePointrVisual(); }
+}
+
+// ==================== POINTR MODALS ====================
+
+function showAddBanModal(pointrId) {
+    openModal(`
+        <div class="modal-content">
+            <h2>Add Ban</h2>
+            <form id="createForm">
+                <label>Type <span class="required">*</span>
+                    <input type="text" id="f_type" placeholder="VD: no_truck" required>
+                </label>
+                <label>Hour <span class="required">*</span>
+                    <input type="number" id="f_hour" placeholder="0–23" min="0" max="23" required>
+                </label>
+                <label>Weight (kg)
+                    <input type="number" id="f_weight" placeholder="VD: 3500" min="0">
+                </label>
+                <div class="modal-error" id="modalError"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-cancel" onclick="closeModal()">Huỷ</button>
+                    <button type="submit" class="btn-submit">Thêm</button>
+                </div>
+            </form>
+        </div>
+    `);
+    document.getElementById('createForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const type = document.getElementById('f_type').value.trim();
+        const hour = parseInt(document.getElementById('f_hour').value);
+        const weightRaw = document.getElementById('f_weight').value;
+        const weight = weightRaw !== '' ? parseInt(weightRaw) : null;
+        if (!type || isNaN(hour)) { document.getElementById('modalError').textContent = 'Vui lòng điền đầy đủ.'; return; }
+        updateStreetPoint(pointrId, 'ban', { type, hour, weight });
+        closeModal();
+    });
+}
+
+function showSetIntModal(pointrId, key, title, label) {
+    const current = streetPointsList.find(p => p.id === pointrId)?.[key];
+    openModal(`
+        <div class="modal-content">
+            <h2>${title}</h2>
+            <form id="createForm">
+                <label>${label} <span class="required">*</span>
+                    <input type="number" id="f_value" placeholder="Nhập số nguyên" required>
+                </label>
+                <div class="modal-error" id="modalError"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-cancel" onclick="closeModal()">Huỷ</button>
+                    <button type="submit" class="btn-submit">Lưu</button>
+                </div>
+            </form>
+        </div>
+    `);
+    // Set current value safely after render
+    if (current !== null && current !== undefined) {
+        document.getElementById('f_value').value = current;
+    }
+    document.getElementById('createForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const value = parseInt(document.getElementById('f_value').value);
+        if (isNaN(value)) { document.getElementById('modalError').textContent = 'Vui lòng nhập số nguyên.'; return; }
+        updateStreetPoint(pointrId, key, value);
+        closeModal();
+    });
+}
+
+function showSetBoolModal(pointrId, key, title) {
+    const current = streetPointsList.find(p => p.id === pointrId)?.[key];
+    openModal(`
+        <div class="modal-content">
+            <h2>${title}</h2>
+            <form id="createForm">
+                <div class="bool-options">
+                    <label class="radio-label">
+                        <input type="radio" name="f_bool" value="true"> True
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="f_bool" value="false"> False
+                    </label>
+                </div>
+                <div class="modal-error" id="modalError"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-cancel" onclick="closeModal()">Huỷ</button>
+                    <button type="submit" class="btn-submit">Lưu</button>
+                </div>
+            </form>
+        </div>
+    `);
+    // Set current checked state after render
+    if (current !== null && current !== undefined) {
+        const radio = document.querySelector(`input[name="f_bool"][value="${current}"]`);
+        if (radio) radio.checked = true;
+    }
+    document.getElementById('createForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const selected = document.querySelector('input[name="f_bool"]:checked');
+        if (!selected) { document.getElementById('modalError').textContent = 'Vui lòng chọn một giá trị.'; return; }
+        updateStreetPoint(pointrId, key, selected.value === 'true');
+        closeModal();
+    });
 }
 
 // Hàm di chuyển active pointr bằng arrow keys
@@ -531,6 +744,35 @@ function initFilterListeners() {
     });
 }
 
+// Khởi tạo document-level drag handlers cho move mode
+function initPointrDrag() {
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging || activePointrId === null) return;
+        const data = pointrData.get(activePointrId);
+        if (!data) { isDragging = false; return; }
+        const container = document.querySelector('.container');
+        data.initialClientX = e.clientX + container.scrollLeft;
+        data.initialClientY = e.clientY + container.scrollTop;
+        data.element.style.left = e.clientX + 'px';
+        data.element.style.top = e.clientY + 'px';
+    });
+    document.addEventListener('mouseup', () => { isDragging = false; });
+    // Đóng sub-menu khi click ra ngoài
+    document.addEventListener('click', (e) => {
+        if (submenuEl && !submenuEl.contains(e.target)) closePointrSubmenu();
+    });
+}
+
+// Khởi tạo editor mode listener (body class + cursor)
+function initEditorListener() {
+    const editor = document.getElementById('editor');
+    editor.addEventListener('change', (e) => {
+        document.body.className = `mode-${e.target.value}`;
+        activePointrId = null;
+        updateActivePointrVisual();
+    });
+}
+
 // Load locations khi trang tải xong
 window.addEventListener('load', () => {
     loadLocations();
@@ -539,4 +781,6 @@ window.addEventListener('load', () => {
     initContainerScrollListener();
     initKeyboardListener();
     initFilterListeners();
+    initPointrDrag();
+    initEditorListener();
 });
