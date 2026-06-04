@@ -4,9 +4,16 @@ let rainControls = null; // { freeze, unfreeze } exposed from initMatrixRain
 let appState = {
     categories: [],
     intents: [],
+    cities: [],
+    districts: [],
+    streets: [],
+    positions: [],
     currentView: 'dashboard',
     editingCategory: null,
     editingIntent: null,
+    editingCity: null,
+    editingDistrict: null,
+    editingStreet: null,
 };
 
 let deleteContext = {
@@ -51,6 +58,54 @@ function initializeEventListeners() {
     // Intent modal
     document.getElementById('addIntentBtn').addEventListener('click', showAddIntentModal);
     document.getElementById('intentForm').addEventListener('submit', handleIntentSave);
+
+    // Cities / Districts / Streets modals
+    document.getElementById('addCityBtn').addEventListener('click', () => showCityModal());
+    document.getElementById('cityForm').addEventListener('submit', handleCitySave);
+    document.getElementById('addDistrictBtn').addEventListener('click', () => showDistrictModal());
+    document.getElementById('districtForm').addEventListener('submit', handleDistrictSave);
+    document.getElementById('addStreetBtn').addEventListener('click', () => showStreetModal());
+    document.getElementById('streetForm').addEventListener('submit', handleStreetSave);
+
+    // Maps filters
+    document.getElementById('districtCityFilter').addEventListener('change', () => {
+        const cityId = parseInt(document.getElementById('districtCityFilter').value) || null;
+        const filtered = cityId ? appState.districts.filter(d => d.city === cityId) : appState.districts;
+        renderDistrictsTable(filtered);
+    });
+    document.getElementById('streetCityFilter').addEventListener('change', async () => {
+        const cityId = parseInt(document.getElementById('streetCityFilter').value) || null;
+        // cascade districts filter
+        const districtSel = document.getElementById('streetDistrictFilter');
+        const districtOpts = cityId ? appState.districts.filter(d => d.city === cityId) : appState.districts;
+        districtSel.innerHTML = '<option value="">All Districts</option>';
+        districtOpts.forEach(d => {
+            const o = document.createElement('option'); o.value = d.id; o.textContent = d.name; districtSel.appendChild(o);
+        });
+        const filtered = cityId ? appState.streets.filter(s => s.city_id === cityId) : appState.streets;
+        renderStreetsTable(filtered);
+    });
+    document.getElementById('streetDistrictFilter').addEventListener('change', () => {
+        const distId = parseInt(document.getElementById('streetDistrictFilter').value) || null;
+        const filtered = distId ? appState.streets.filter(s => s.district_id === distId) : appState.streets;
+        renderStreetsTable(filtered);
+    });
+    document.getElementById('positionStreetFilter').addEventListener('change', () => {
+        const streetId = parseInt(document.getElementById('positionStreetFilter').value) || null;
+        const filtered = streetId ? appState.positions.filter(p => p.street_id === streetId) : appState.positions;
+        renderPositionsTable(filtered);
+    });
+
+    // Street city→district cascade in modal
+    document.getElementById('streetCity').addEventListener('change', () => {
+        const cityId = parseInt(document.getElementById('streetCity').value) || null;
+        const distSel = document.getElementById('streetDistrict');
+        distSel.innerHTML = '<option value="">Select a district</option>';
+        const filtered = cityId ? appState.districts.filter(d => d.city === cityId) : appState.districts;
+        filtered.forEach(d => {
+            const o = document.createElement('option'); o.value = d.id; o.textContent = d.name; distSel.appendChild(o);
+        });
+    });
 
     // Modal close buttons
     document.querySelectorAll('.modal-close').forEach(btn => {
@@ -106,34 +161,47 @@ function initializeEventListeners() {
     });
 }
 
-// Build a { [id]: label } map from categories array
+// Build helper maps
 function buildCategoriesMap(categories) {
     return Object.fromEntries(categories.map(c => [c.id, c.label]));
+}
+function buildNameMap(items) {
+    return Object.fromEntries(items.map(i => [i.id, i.name]));
 }
 
 // Load all data from API
 async function loadAllData() {
     try {
         UIComponents.updateStatus(false);
-        
-        // Check health
         await api.healthCheck();
-        
-        // Load categories
-        appState.categories = await api.getCategories();
-        
-        // Load intents
-        appState.intents = await api.getIntents();
-        
-        // Update UI
+
+        [appState.categories, appState.intents, appState.cities] = await Promise.all([
+            api.getCategories(),
+            api.getIntents(),
+            api.getCities(),
+        ]);
+        appState.districts = await api.getDistricts();
+        appState.streets   = await api.getStreets();
+        appState.positions = await api.getPositions();
+
+        // Intents / Categories
         const categoriesMap = buildCategoriesMap(appState.categories);
         UIComponents.renderCategoriesTable(appState.categories);
         UIComponents.renderIntentsTable(appState.intents, categoriesMap);
         UIComponents.populateCategoryDropdown(appState.categories);
         UIComponents.populateFilterDropdowns(appState.categories);
         UIComponents.updateDashboardStats(appState.categories, appState.intents);
+
+        // Maps tables
+        renderCitiesTable(appState.cities);
+        renderDistrictsTable(appState.districts);
+        renderStreetsTable(appState.streets);
+        renderPositionsTable(appState.positions);
+
+        // Populate maps filter dropdowns
+        populateMapsDropdowns();
+
         UIComponents.updateStatus(true);
-        
         UIComponents.showToast('Data loaded successfully', 'success');
     } catch (error) {
         console.error('Error loading data:', error);
@@ -164,9 +232,13 @@ function switchView(viewName) {
 
     // Update title
     const titles = {
-        dashboard: 'Dashboard',
+        dashboard:  'Dashboard',
         categories: 'Categories Management',
-        intents: 'Intents Management',
+        intents:    'Intents Management',
+        cities:     'Cities Management',
+        districts:  'Districts Management',
+        streets:    'Streets Management',
+        positions:  'Positions Management',
     };
     document.getElementById('viewTitle').textContent = titles[viewName] || 'Dashboard';
 
@@ -361,6 +433,18 @@ async function handleConfirmDelete() {
         } else if (deleteContext.type === 'intent') {
             await api.deleteIntent(deleteContext.id);
             UIComponents.showToast('Intent deleted successfully', 'success');
+        } else if (deleteContext.type === 'city') {
+            await api.deleteCity(deleteContext.id);
+            UIComponents.showToast('City deleted', 'success');
+        } else if (deleteContext.type === 'district') {
+            await api.deleteDistrict(deleteContext.id);
+            UIComponents.showToast('District deleted', 'success');
+        } else if (deleteContext.type === 'street') {
+            await api.deleteStreet(deleteContext.id);
+            UIComponents.showToast('Street deleted', 'success');
+        } else if (deleteContext.type === 'position') {
+            await api.deletePosition(deleteContext.id);
+            UIComponents.showToast('Position deleted', 'success');
         }
 
         UIComponents.closeModal('deleteModal');
@@ -368,6 +452,269 @@ async function handleConfirmDelete() {
     } catch (error) {
         UIComponents.showToast(`Error deleting item: ${error.message}`, 'error');
     }
+}
+
+// ==================== MAPS: RENDER HELPERS ====================
+
+function populateMapsDropdowns() {
+    // districtCityFilter
+    const dcf = document.getElementById('districtCityFilter');
+    const scf = document.getElementById('streetCityFilter');
+    const psf = document.getElementById('positionStreetFilter');
+    [dcf, scf].forEach(sel => {
+        if (!sel) return;
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">All Cities</option>';
+        appState.cities.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name; sel.appendChild(o); });
+        sel.value = cur;
+    });
+    if (psf) {
+        const cur = psf.value;
+        psf.innerHTML = '<option value="">All Streets</option>';
+        appState.streets.forEach(s => { const o = document.createElement('option'); o.value = s.id; o.textContent = s.name; psf.appendChild(o); });
+        psf.value = cur;
+    }
+    // Modal selects
+    ['districtCity', 'streetCity'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        const cur = sel.value;
+        sel.innerHTML = '<option value="">Select a city</option>';
+        appState.cities.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.name; sel.appendChild(o); });
+        sel.value = cur;
+    });
+}
+
+function renderCitiesTable(cities) {
+    const thead = document.getElementById('citiesTableHead');
+    const tbody = document.getElementById('citiesTableBody');
+    if (!thead || !tbody) return;
+    tbody.innerHTML = '';
+    if (!cities || cities.length === 0) {
+        thead.innerHTML = '';
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--text-muted)">No cities found</td></tr>';
+        return;
+    }
+    const cols = Object.keys(cities[0]);
+    thead.innerHTML = '';
+    const hr = document.createElement('tr');
+    [...cols, 'actions'].forEach(c => { const th = document.createElement('th'); th.textContent = UIComponents.formatHeader(c); hr.appendChild(th); });
+    thead.appendChild(hr);
+    cities.forEach(city => {
+        const row = document.createElement('tr');
+        cols.forEach(col => {
+            const td = document.createElement('td');
+            const v = city[col];
+            td.textContent = (v === null || v === undefined) ? '—' : (col === 'created_at' ? new Date(v).toLocaleString() : v);
+            row.appendChild(td);
+        });
+        const atd = document.createElement('td');
+        atd.appendChild(UIComponents.createActionButtons(() => showCityModal(city), () => deleteMapsItem('city', city.id, city.name)));
+        row.appendChild(atd);
+        tbody.appendChild(row);
+    });
+}
+
+function renderDistrictsTable(districts) {
+    const thead = document.getElementById('districtsTableHead');
+    const tbody = document.getElementById('districtsTableBody');
+    if (!thead || !tbody) return;
+    tbody.innerHTML = '';
+    const cityMap = buildNameMap(appState.cities);
+    if (!districts || districts.length === 0) {
+        thead.innerHTML = '';
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--text-muted)">No districts found</td></tr>';
+        return;
+    }
+    const cols = Object.keys(districts[0]);
+    thead.innerHTML = '';
+    const hr = document.createElement('tr');
+    [...cols, 'actions'].forEach(c => { const th = document.createElement('th'); th.textContent = UIComponents.formatHeader(c); hr.appendChild(th); });
+    thead.appendChild(hr);
+    districts.forEach(d => {
+        const row = document.createElement('tr');
+        cols.forEach(col => {
+            const td = document.createElement('td');
+            const v = d[col];
+            if (col === 'city') td.textContent = cityMap[v] || v || '—';
+            else if (v === null || v === undefined) td.textContent = '—';
+            else if (col === 'created_at') td.textContent = new Date(v).toLocaleString();
+            else td.textContent = v;
+            row.appendChild(td);
+        });
+        const atd = document.createElement('td');
+        atd.appendChild(UIComponents.createActionButtons(() => showDistrictModal(d), () => deleteMapsItem('district', d.id, d.name)));
+        row.appendChild(atd);
+        tbody.appendChild(row);
+    });
+}
+
+function renderStreetsTable(streets) {
+    const thead = document.getElementById('streetsTableHead');
+    const tbody = document.getElementById('streetsTableBody');
+    if (!thead || !tbody) return;
+    tbody.innerHTML = '';
+    const cityMap = buildNameMap(appState.cities);
+    const distMap = buildNameMap(appState.districts);
+    if (!streets || streets.length === 0) {
+        thead.innerHTML = '';
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--text-muted)">No streets found</td></tr>';
+        return;
+    }
+    const cols = Object.keys(streets[0]);
+    thead.innerHTML = '';
+    const hr = document.createElement('tr');
+    [...cols, 'actions'].forEach(c => { const th = document.createElement('th'); th.textContent = UIComponents.formatHeader(c); hr.appendChild(th); });
+    thead.appendChild(hr);
+    streets.forEach(s => {
+        const row = document.createElement('tr');
+        cols.forEach(col => {
+            const td = document.createElement('td');
+            const v = s[col];
+            if (col === 'city_id') td.textContent = cityMap[v] || v || '—';
+            else if (col === 'district_id') td.textContent = distMap[v] || v || '—';
+            else if (v === null || v === undefined) td.textContent = '—';
+            else if (col === 'created_at') td.textContent = new Date(v).toLocaleString();
+            else td.textContent = v;
+            row.appendChild(td);
+        });
+        const atd = document.createElement('td');
+        atd.appendChild(UIComponents.createActionButtons(() => showStreetModal(s), () => deleteMapsItem('street', s.id, s.name)));
+        row.appendChild(atd);
+        tbody.appendChild(row);
+    });
+}
+
+function renderPositionsTable(positions) {
+    const thead = document.getElementById('positionsTableHead');
+    const tbody = document.getElementById('positionsTableBody');
+    if (!thead || !tbody) return;
+    tbody.innerHTML = '';
+    const streetMap = buildNameMap(appState.streets);
+    if (!positions || positions.length === 0) {
+        thead.innerHTML = '';
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:var(--text-muted)">No positions found</td></tr>';
+        return;
+    }
+    const cols = Object.keys(positions[0]);
+    thead.innerHTML = '';
+    const hr = document.createElement('tr');
+    [...cols, 'actions'].forEach(c => { const th = document.createElement('th'); th.textContent = UIComponents.formatHeader(c); hr.appendChild(th); });
+    thead.appendChild(hr);
+    positions.forEach(p => {
+        const row = document.createElement('tr');
+        cols.forEach(col => {
+            const td = document.createElement('td');
+            const v = p[col];
+            if (col === 'street_id') td.textContent = streetMap[v] || v || '—';
+            else if (col === 'ban') td.textContent = v && v.length ? `[${v.length}]` : '—';
+            else if (v === null || v === undefined) td.textContent = '—';
+            else if (col === 'created_at') td.textContent = new Date(v).toLocaleString();
+            else td.textContent = v;
+            row.appendChild(td);
+        });
+        const atd = document.createElement('td');
+        atd.appendChild(UIComponents.createActionButtons(null, () => deleteMapsItem('position', p.id, `#${p.id}`)));
+        row.appendChild(atd);
+        tbody.appendChild(row);
+    });
+}
+
+// ==================== MAPS: CRUD ====================
+
+function showCityModal(city = null) {
+    appState.editingCity = city;
+    document.getElementById('cityModalTitle').textContent = city ? 'Edit City' : 'Add City';
+    document.getElementById('cityName').value = city?.name || '';
+    UIComponents.openModal('cityModal');
+}
+
+async function handleCitySave(e) {
+    e.preventDefault();
+    const name = document.getElementById('cityName').value.trim();
+    try {
+        if (appState.editingCity) {
+            await api.updateCity(appState.editingCity.id, { name });
+            UIComponents.showToast('City updated', 'success');
+        } else {
+            await api.createCity(name);
+            UIComponents.showToast('City created', 'success');
+        }
+        UIComponents.closeModal('cityModal');
+        await loadAllData();
+    } catch (err) { UIComponents.showToast(`Error: ${err.message}`, 'error'); }
+}
+
+function showDistrictModal(district = null) {
+    appState.editingDistrict = district;
+    document.getElementById('districtModalTitle').textContent = district ? 'Edit District' : 'Add District';
+    populateMapsDropdowns();
+    document.getElementById('districtName').value = district?.name || '';
+    document.getElementById('districtLname').value = district?.lname || '';
+    document.getElementById('districtCity').value = district?.city || '';
+    UIComponents.openModal('districtModal');
+}
+
+async function handleDistrictSave(e) {
+    e.preventDefault();
+    const name  = document.getElementById('districtName').value.trim();
+    const lname = document.getElementById('districtLname').value.trim() || null;
+    const city  = parseInt(document.getElementById('districtCity').value);
+    try {
+        if (appState.editingDistrict) {
+            await api.updateDistrict(appState.editingDistrict.id, { name, lname, city });
+            UIComponents.showToast('District updated', 'success');
+        } else {
+            await api.createDistrict(name, city, lname);
+            UIComponents.showToast('District created', 'success');
+        }
+        UIComponents.closeModal('districtModal');
+        await loadAllData();
+    } catch (err) { UIComponents.showToast(`Error: ${err.message}`, 'error'); }
+}
+
+function showStreetModal(street = null) {
+    appState.editingStreet = street;
+    document.getElementById('streetModalTitle').textContent = street ? 'Edit Street' : 'Add Street';
+    populateMapsDropdowns();
+    document.getElementById('streetName').value = street?.name || '';
+    document.getElementById('streetType').value = street?.type || '';
+    document.getElementById('streetCity').value = street?.city_id || '';
+    // populate districts for selected city
+    const cityId = street?.city_id || null;
+    const distSel = document.getElementById('streetDistrict');
+    distSel.innerHTML = '<option value="">Select a district</option>';
+    const dists = cityId ? appState.districts.filter(d => d.city === cityId) : appState.districts;
+    dists.forEach(d => { const o = document.createElement('option'); o.value = d.id; o.textContent = d.name; distSel.appendChild(o); });
+    distSel.value = street?.district_id || '';
+    UIComponents.openModal('streetModal');
+}
+
+async function handleStreetSave(e) {
+    e.preventDefault();
+    const name        = document.getElementById('streetName').value.trim();
+    const type        = document.getElementById('streetType').value.trim() || null;
+    const cityId      = parseInt(document.getElementById('streetCity').value);
+    const districtId  = parseInt(document.getElementById('streetDistrict').value);
+    try {
+        if (appState.editingStreet) {
+            await api.updateStreet(appState.editingStreet.id, { name, type, city_id: cityId, district_id: districtId });
+            UIComponents.showToast('Street updated', 'success');
+        } else {
+            await api.createStreet(name, districtId, cityId, type);
+            UIComponents.showToast('Street created', 'success');
+        }
+        UIComponents.closeModal('streetModal');
+        await loadAllData();
+    } catch (err) { UIComponents.showToast(`Error: ${err.message}`, 'error'); }
+}
+
+function deleteMapsItem(type, id, name) {
+    deleteContext.type = type;
+    deleteContext.id   = id;
+    deleteContext.name = name;
+    document.getElementById('deleteMessage').textContent = `Are you sure you want to delete ${type} "${name}"?`;
+    UIComponents.openModal('deleteModal');
 }
 
 // ==================== DASHBOARD SEARCH RESULTS ====================

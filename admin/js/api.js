@@ -128,6 +128,10 @@ class ApiClient {
         return this.request('/cities');
     }
 
+    async getCityById(cityId) {
+        return this.request(`/cities/${cityId}`);
+    }
+
     async createCity(name) {
         return this.request('/cities', {
             method: 'POST',
@@ -135,9 +139,24 @@ class ApiClient {
         });
     }
 
+    async updateCity(cityId, data) {
+        return this.request(`/cities/${cityId}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async deleteCity(cityId) {
+        return this.request(`/cities/${cityId}`, { method: 'DELETE' });
+    }
+
     async getDistricts(cityId = null) {
         const params = cityId ? `?city_id=${cityId}` : '';
         return this.request(`/districts${params}`);
+    }
+
+    async getDistrictById(districtId) {
+        return this.request(`/districts/${districtId}`);
     }
 
     async createDistrict(name, cityId, lname = null) {
@@ -149,12 +168,27 @@ class ApiClient {
         });
     }
 
+    async updateDistrict(districtId, data) {
+        return this.request(`/districts/${districtId}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async deleteDistrict(districtId) {
+        return this.request(`/districts/${districtId}`, { method: 'DELETE' });
+    }
+
     async getStreets(districtId = null, cityId = null) {
         const params = new URLSearchParams();
         if (districtId) params.append('district_id', districtId);
         else if (cityId) params.append('city_id', cityId);
         const qs = params.toString();
         return this.request(`/streets${qs ? '?' + qs : ''}`);
+    }
+
+    async getStreetById(streetId) {
+        return this.request(`/streets/${streetId}`);
     }
 
     async createStreet(name, districtId, cityId, type = null) {
@@ -165,4 +199,47 @@ class ApiClient {
             body: JSON.stringify(body),
         });
     }
+
+    async updateStreet(streetId, data) {
+        return this.request(`/streets/${streetId}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async deleteStreet(streetId) {
+        return this.request(`/streets/${streetId}`, { method: 'DELETE' });
+    }
+
+    // ==================== POSITIONS ====================
+
+    async getPositions(streetId = null) {
+        const params = streetId ? `?street_id=${streetId}` : '';
+        return this.request(`/positions${params}`);
+    }
+
+    async getPositionById(positionId) {
+        return this.request(`/positions/${positionId}`);
+    }
+
+    async createPosition(data) {
+        return this.request('/positions', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async updatePosition(positionId, data) {
+        return this.request(`/positions/${positionId}`, {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    }
+
+    async deletePosition(positionId) {
+        return this.request(`/positions/${positionId}`, { method: 'DELETE' });
+    }
 }
+
+// Global singleton used by app.js
+const api = new ApiClient();

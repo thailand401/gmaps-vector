@@ -13,7 +13,10 @@ from config import supabase, settings
 from models import (
     Category, CategoryCreate, CategoryUpdate,
     Intent, IntentCreate, IntentUpdate, IntentWithCategory,
-    City, CityCreate, District, DistrictCreate, Street, StreetCreate
+    City, CityCreate, CityUpdate,
+    District, DistrictCreate, DistrictUpdate,
+    Street, StreetCreate, StreetUpdate,
+    Position, PositionCreate, PositionUpdate,
 )
 from services.category_service import CategoryService
 from services.intent_service import IntentService
@@ -38,6 +41,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Map images listing
+@app.get("/api/map-images")
+async def get_map_images():
+    images_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'admin', 'images')
+    try:
+        files = [f for f in os.listdir(images_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+        files.sort(key=lambda x: int(x.rsplit('.', 1)[0].split('_')[-1]) if x.rsplit('.', 1)[0].split('_')[-1].isdigit() else 0)
+        return {"images": [f"images/{f}" for f in files]}
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Images directory not found")
 
 
 # Health check
@@ -212,6 +227,36 @@ async def create_city(city: CityCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/cities/{city_id}", response_model=City)
+async def get_city(city_id: int):
+    try:
+        city = await MapsService.get_city_by_id(city_id)
+        if not city:
+            raise HTTPException(status_code=404, detail="City not found")
+        return city
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/cities/{city_id}", response_model=City)
+async def update_city(city_id: int, city: CityUpdate):
+    try:
+        return await MapsService.update_city(city_id, city)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/cities/{city_id}")
+async def delete_city(city_id: int):
+    try:
+        await MapsService.delete_city(city_id)
+        return {"message": "City deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/districts", response_model=List[District])
 async def list_districts(city_id: Optional[int] = Query(None)):
     """Get districts, optionally filtered by city_id"""
@@ -229,6 +274,36 @@ async def create_district(district: DistrictCreate):
         return await MapsService.create_district(district)
     except Exception as e:
         logger.error(f"Error creating district: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/districts/{district_id}", response_model=District)
+async def get_district(district_id: int):
+    try:
+        district = await MapsService.get_district_by_id(district_id)
+        if not district:
+            raise HTTPException(status_code=404, detail="District not found")
+        return district
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/districts/{district_id}", response_model=District)
+async def update_district(district_id: int, district: DistrictUpdate):
+    try:
+        return await MapsService.update_district(district_id, district)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/districts/{district_id}")
+async def delete_district(district_id: int):
+    try:
+        await MapsService.delete_district(district_id)
+        return {"message": "District deleted"}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -255,6 +330,81 @@ async def create_street(street: StreetCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-if __name__ == "__main__":
+@app.get("/api/streets/{street_id}", response_model=Street)
+async def get_street(street_id: int):
+    try:
+        street = await MapsService.get_street_by_id(street_id)
+        if not street:
+            raise HTTPException(status_code=404, detail="Street not found")
+        return street
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/streets/{street_id}", response_model=Street)
+async def update_street(street_id: int, street: StreetUpdate):
+    try:
+        return await MapsService.update_street(street_id, street)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/streets/{street_id}")
+async def delete_street(street_id: int):
+    try:
+        await MapsService.delete_street(street_id)
+        return {"message": "Street deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== POSITIONS ENDPOINTS ====================
+
+@app.get("/api/positions", response_model=List[Position])
+async def list_positions(street_id: Optional[int] = Query(None)):
+    try:
+        return await MapsService.get_positions(street_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/positions/{position_id}", response_model=Position)
+async def get_position(position_id: int):
+    try:
+        pos = await MapsService.get_position_by_id(position_id)
+        if not pos:
+            raise HTTPException(status_code=404, detail="Position not found")
+        return pos
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/positions", response_model=Position)
+async def create_position(position: PositionCreate):
+    try:
+        return await MapsService.create_position(position)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/positions/{position_id}", response_model=Position)
+async def update_position(position_id: int, position: PositionUpdate):
+    try:
+        return await MapsService.update_position(position_id, position)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/positions/{position_id}")
+async def delete_position(position_id: int):
+    try:
+        await MapsService.delete_position(position_id)
+        return {"message": "Position deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=4000, log_level="info")

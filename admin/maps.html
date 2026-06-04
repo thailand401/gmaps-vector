@@ -35,7 +35,30 @@
         <div id="modal" class="modal"></div>
     </div>
 
+    <!-- Settings -->
+    <button id="settingsBtn" class="settings-btn" title="Settings">⚙</button>
+    <div id="settingsPanel" class="settings-panel">
+        <div class="settings-title">Settings</div>
+        <label class="settings-label">
+            Items
+            <input type="number" id="sItems" value="23" min="1">
+        </label>
+        <label class="settings-label">
+            Size (px)
+            <input type="number" id="sSize" value="400" min="1">
+        </label>
+        <label class="settings-label settings-label--row">
+            <input type="checkbox" id="sIsBorder" checked>
+            Border
+        </label>
+        <button id="settingsSave" class="settings-save">Save</button>
+    </div>
+
     <script src="js/api.js"></script>
+    <script src="js/maps/map-coordinate.js"></script>
+    <script src="js/maps/navigation.js"></script>
+    <script src="js/maps/settings.js"></script>
+    <script src="js/maps/pointr.js"></script>
     <script src="js/maps.js"></script>
 </body>
 </html>

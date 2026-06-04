@@ -25,6 +25,18 @@
                 <button class="nav-btn" data-view="intents">
                     <span class="icon">🎯</span> Intents
                 </button>
+                <button class="nav-btn" data-view="cities">
+                    <span class="icon">🏙️</span> Cities
+                </button>
+                <button class="nav-btn" data-view="districts">
+                    <span class="icon">🗺️</span> Districts
+                </button>
+                <button class="nav-btn" data-view="streets">
+                    <span class="icon">🛣️</span> Streets
+                </button>
+                <button class="nav-btn" data-view="positions">
+                    <span class="icon">📍</span> Positions
+                </button>
             </nav>
             <div class="sidebar-footer">
                 <div class="status-indicator">
@@ -106,10 +118,167 @@
                     </table>
                 </div>
             </section>
+
+            <!-- Cities View -->
+            <section id="cities" class="view">
+                <div class="view-header">
+                    <h3>Cities Management</h3>
+                    <button class="btn btn-primary" id="addCityBtn">+ Add City</button>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead id="citiesTableHead"></thead>
+                        <tbody id="citiesTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Districts View -->
+            <section id="districts" class="view">
+                <div class="view-header">
+                    <h3>Districts Management</h3>
+                    <div class="filter-group">
+                        <select id="districtCityFilter" class="filter-select">
+                            <option value="">All Cities</option>
+                        </select>
+                        <button class="btn btn-primary" id="addDistrictBtn">+ Add District</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead id="districtsTableHead"></thead>
+                        <tbody id="districtsTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Streets View -->
+            <section id="streets" class="view">
+                <div class="view-header">
+                    <h3>Streets Management</h3>
+                    <div class="filter-group">
+                        <select id="streetCityFilter" class="filter-select">
+                            <option value="">All Cities</option>
+                        </select>
+                        <select id="streetDistrictFilter" class="filter-select">
+                            <option value="">All Districts</option>
+                        </select>
+                        <button class="btn btn-primary" id="addStreetBtn">+ Add Street</button>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead id="streetsTableHead"></thead>
+                        <tbody id="streetsTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Positions View -->
+            <section id="positions" class="view">
+                <div class="view-header">
+                    <h3>Positions Management</h3>
+                    <div class="filter-group">
+                        <select id="positionStreetFilter" class="filter-select">
+                            <option value="">All Streets</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead id="positionsTableHead"></thead>
+                        <tbody id="positionsTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
         </main>
     </div>
 
-    <!-- Modal: Add/Edit Category -->
+    <!-- Modal: Add/Edit City -->
+    <div id="cityModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 id="cityModalTitle">Add City</h4>
+                <button class="modal-close" data-modal="cityModal">&times;</button>
+            </div>
+            <form id="cityForm">
+                <div class="form-group">
+                    <label for="cityName">Name *</label>
+                    <input type="text" id="cityName" name="cityName" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <button type="button" class="btn btn-secondary" data-modal="cityModal">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Add/Edit District -->
+    <div id="districtModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 id="districtModalTitle">Add District</h4>
+                <button class="modal-close" data-modal="districtModal">&times;</button>
+            </div>
+            <form id="districtForm">
+                <div class="form-group">
+                    <label for="districtName">Name *</label>
+                    <input type="text" id="districtName" name="districtName" required>
+                </div>
+                <div class="form-group">
+                    <label for="districtLname">Short Name</label>
+                    <input type="text" id="districtLname" name="districtLname">
+                </div>
+                <div class="form-group">
+                    <label for="districtCity">City *</label>
+                    <select id="districtCity" name="districtCity" required>
+                        <option value="">Select a city</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <button type="button" class="btn btn-secondary" data-modal="districtModal">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Add/Edit Street -->
+    <div id="streetModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 id="streetModalTitle">Add Street</h4>
+                <button class="modal-close" data-modal="streetModal">&times;</button>
+            </div>
+            <form id="streetForm">
+                <div class="form-group">
+                    <label for="streetName">Name *</label>
+                    <input type="text" id="streetName" name="streetName" required>
+                </div>
+                <div class="form-group">
+                    <label for="streetType">Type</label>
+                    <input type="text" id="streetType" name="streetType" placeholder="e.g. Đường, Phố">
+                </div>
+                <div class="form-group">
+                    <label for="streetCity">City *</label>
+                    <select id="streetCity" name="streetCity" required>
+                        <option value="">Select a city</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="streetDistrict">District *</label>
+                    <select id="streetDistrict" name="streetDistrict" required>
+                        <option value="">Select a district</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Save</button>
+                    <button type="button" class="btn btn-secondary" data-modal="streetModal">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
     <div id="categoryModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">

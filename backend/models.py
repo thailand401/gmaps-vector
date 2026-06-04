@@ -103,3 +103,63 @@ class StreetCreate(BaseModel):
     type: Optional[str] = None
     district_id: int
     city_id: int
+
+
+class CityUpdate(BaseModel):
+    name: Optional[str] = None
+
+
+class DistrictUpdate(BaseModel):
+    name: Optional[str] = None
+    lname: Optional[str] = None
+    city: Optional[int] = None
+
+
+class StreetUpdate(BaseModel):
+    name: Optional[str] = None
+    type: Optional[str] = None
+    district_id: Optional[int] = None
+    city_id: Optional[int] = None
+
+
+# ==================== POSITIONS MODEL ====================
+
+class Position(BaseModel):
+    id: Optional[int] = None
+    street_id: Optional[int] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
+    ban: Optional[list] = None
+    speed: Optional[int] = None
+    park: Optional[bool] = None
+    lane: Optional[int] = None
+    tool: Optional[int] = None
+    flooding: Optional[bool] = None
+    created_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PositionCreate(BaseModel):
+    street_id: int
+    x: float
+    y: float
+    ban: Optional[list] = None
+    speed: Optional[int] = None
+    park: Optional[bool] = None
+    lane: Optional[int] = None
+    tool: Optional[int] = None
+    flooding: Optional[bool] = None
+
+
+class PositionUpdate(BaseModel):
+    street_id: Optional[int] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
+    ban: Optional[list] = None
+    speed: Optional[int] = None
+    park: Optional[bool] = None
+    lane: Optional[int] = None
+    tool: Optional[int] = None
+    flooding: Optional[bool] = None

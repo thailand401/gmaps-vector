@@ -1,5 +1,10 @@
 from config import supabase
-from models import City, CityCreate, District, DistrictCreate, Street, StreetCreate
+from models import (
+    City, CityCreate, CityUpdate,
+    District, DistrictCreate, DistrictUpdate,
+    Street, StreetCreate, StreetUpdate,
+    Position, PositionCreate, PositionUpdate,
+)
 from typing import List, Optional
 
 
@@ -29,6 +34,31 @@ class MapsService:
             raise Exception(f"Failed to create city: {str(e)}")
 
     @staticmethod
+    async def get_city_by_id(city_id: int) -> Optional[City]:
+        try:
+            result = supabase.table("Cities").select("id, name").eq("id", city_id).execute()
+            return City(**result.data[0]) if result.data else None
+        except Exception as e:
+            raise Exception(f"Failed to fetch city: {str(e)}")
+
+    @staticmethod
+    async def update_city(city_id: int, data: CityUpdate) -> City:
+        try:
+            payload = {k: v for k, v in data.model_dump().items() if v is not None}
+            result = supabase.table("Cities").update(payload).eq("id", city_id).execute()
+            return City(**result.data[0])
+        except Exception as e:
+            raise Exception(f"Failed to update city: {str(e)}")
+
+    @staticmethod
+    async def delete_city(city_id: int) -> bool:
+        try:
+            supabase.table("Cities").delete().eq("id", city_id).execute()
+            return True
+        except Exception as e:
+            raise Exception(f"Failed to delete city: {str(e)}")
+
+    @staticmethod
     async def get_districts(city_id: Optional[int] = None) -> List[District]:
         try:
             query = supabase.table("Districts").select("id, name, lname, city").order("name")
@@ -50,6 +80,31 @@ class MapsService:
             return District(**result.data[0])
         except Exception as e:
             raise Exception(f"Failed to create district: {str(e)}")
+
+    @staticmethod
+    async def get_district_by_id(district_id: int) -> Optional[District]:
+        try:
+            result = supabase.table("Districts").select("id, name, lname, city").eq("id", district_id).execute()
+            return District(**result.data[0]) if result.data else None
+        except Exception as e:
+            raise Exception(f"Failed to fetch district: {str(e)}")
+
+    @staticmethod
+    async def update_district(district_id: int, data: DistrictUpdate) -> District:
+        try:
+            payload = {k: v for k, v in data.model_dump().items() if v is not None}
+            result = supabase.table("Districts").update(payload).eq("id", district_id).execute()
+            return District(**result.data[0])
+        except Exception as e:
+            raise Exception(f"Failed to update district: {str(e)}")
+
+    @staticmethod
+    async def delete_district(district_id: int) -> bool:
+        try:
+            supabase.table("Districts").delete().eq("id", district_id).execute()
+            return True
+        except Exception as e:
+            raise Exception(f"Failed to delete district: {str(e)}")
 
     @staticmethod
     async def get_streets(district_id: Optional[int] = None, city_id: Optional[int] = None) -> List[Street]:
@@ -75,3 +130,80 @@ class MapsService:
             return Street(**result.data[0])
         except Exception as e:
             raise Exception(f"Failed to create street: {str(e)}")
+
+    @staticmethod
+    async def get_street_by_id(street_id: int) -> Optional[Street]:
+        try:
+            result = supabase.table("Streets").select("id, name, type, district_id, city_id").eq("id", street_id).execute()
+            return Street(**result.data[0]) if result.data else None
+        except Exception as e:
+            raise Exception(f"Failed to fetch street: {str(e)}")
+
+    @staticmethod
+    async def update_street(street_id: int, data: StreetUpdate) -> Street:
+        try:
+            payload = {k: v for k, v in data.model_dump().items() if v is not None}
+            result = supabase.table("Streets").update(payload).eq("id", street_id).execute()
+            return Street(**result.data[0])
+        except Exception as e:
+            raise Exception(f"Failed to update street: {str(e)}")
+
+    @staticmethod
+    async def delete_street(street_id: int) -> bool:
+        try:
+            supabase.table("Streets").delete().eq("id", street_id).execute()
+            return True
+        except Exception as e:
+            raise Exception(f"Failed to delete street: {str(e)}")
+
+    # ==================== POSITIONS ====================
+
+    @staticmethod
+    async def get_positions(street_id: Optional[int] = None) -> List[Position]:
+        try:
+            query = supabase.table("Positions").select("*").order("id")
+            if street_id is not None:
+                query = query.eq("street_id", street_id)
+            result = query.execute()
+            return [Position(**item) for item in result.data]
+        except Exception as e:
+            raise Exception(f"Failed to fetch positions: {str(e)}")
+
+    @staticmethod
+    async def get_position_by_id(position_id: int) -> Optional[Position]:
+        try:
+            result = supabase.table("Positions").select("*").eq("id", position_id).execute()
+            return Position(**result.data[0]) if result.data else None
+        except Exception as e:
+            raise Exception(f"Failed to fetch position: {str(e)}")
+
+    @staticmethod
+    async def create_position(data: PositionCreate) -> Position:
+        try:
+            next_id = _next_id("Positions")
+            payload = {"id": next_id, "street_id": data.street_id, "x": data.x, "y": data.y}
+            for field in ("ban", "speed", "park", "lane", "tool", "flooding"):
+                val = getattr(data, field)
+                if val is not None:
+                    payload[field] = val
+            result = supabase.table("Positions").insert(payload).execute()
+            return Position(**result.data[0])
+        except Exception as e:
+            raise Exception(f"Failed to create position: {str(e)}")
+
+    @staticmethod
+    async def update_position(position_id: int, data: PositionUpdate) -> Position:
+        try:
+            payload = {k: v for k, v in data.model_dump().items() if v is not None}
+            result = supabase.table("Positions").update(payload).eq("id", position_id).execute()
+            return Position(**result.data[0])
+        except Exception as e:
+            raise Exception(f"Failed to update position: {str(e)}")
+
+    @staticmethod
+    async def delete_position(position_id: int) -> bool:
+        try:
+            supabase.table("Positions").delete().eq("id", position_id).execute()
+            return True
+        except Exception as e:
+            raise Exception(f"Failed to delete position: {str(e)}")
