@@ -12,7 +12,7 @@ window.addEventListener('load', async () => {
     initGalleryClickListener();
     initContainerScrollListener();
     initKeyboardListener();
-    initFilterListeners();
+    await initFilterListeners();
     initPointrDrag();
     initEditorListener();
     initSettings();
@@ -131,6 +131,7 @@ window.addEventListener('load', async () => {
     sizePer  = nSize/2400;
 
     setTimeout(() => {
+      //return;
       allPointrs.forEach(({ name, latitude, longitude }) => {
           const pos = latLonToPixel(latitude, longitude, sizePer);
           const { pointr } = createPointr(pos.left, pos.top, name, latitude, longitude);

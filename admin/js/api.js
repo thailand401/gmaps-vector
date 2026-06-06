@@ -187,6 +187,10 @@ class ApiClient {
         return this.request(`/streets${qs ? '?' + qs : ''}`);
     }
 
+    async getAllStreets() {
+        return this.request('/streets');
+    }
+
     async getStreetById(streetId) {
         return this.request(`/streets/${streetId}`);
     }

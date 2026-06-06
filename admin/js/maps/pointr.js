@@ -70,18 +70,20 @@ function createPointr(clientX, clientY, title = '', lat = null, lon = null) {
         pointr.appendChild(tooltip);
     }
 
+    const currentStreetId = getCurrentStreetId();
     pointrData.set(pointrId, {
         id: pointrId,
         initialClientX: clientX,
         initialClientY: clientY,
         lat: lat,
         lon: lon,
+        streets: currentStreetId ? [currentStreetId] : [],
         element: pointr,
         timestamp: new Date().toISOString()
     });
 
     addToStreetPoints(pointrId, clientX, clientY);
-
+    console.log(pointrId);
     pointr.addEventListener('mousedown', (e) => {
         const editor = document.querySelector('#editor');
         if (editor.value !== 'move') return;
@@ -135,6 +137,7 @@ function showPointrSubmenu(pointrId, anchorEl) {
     menu.style.top = (rect.top - 4) + 'px';
 
     const actions = [
+        { label: 'Set Node',     action: 'set-node'     },
         { label: 'Add Ban',      action: 'add-ban'      },
         { label: 'Set Speed',    action: 'set-speed'    },
         { label: 'Set Park',     action: 'set-park'     },
@@ -162,6 +165,7 @@ function showPointrSubmenu(pointrId, anchorEl) {
 
 function handleSubmenuAction(action, pointrId) {
     switch (action) {
+        case 'set-node':     showSetNodeModal(pointrId);                                             break;
         case 'add-ban':      showAddBanModal(pointrId);                                              break;
         case 'set-speed':    showSetIntModal(pointrId, 'speed', 'Set Speed', 'Tốc độ (km/h)');      break;
         case 'set-park':     showSetBoolModal(pointrId, 'park', 'Set Park');                         break;
@@ -181,6 +185,120 @@ function deletePointr(pointrId) {
 }
 
 // ==================== POINTR MODALS ====================
+
+function showSetNodeModal(pointrId) {
+    const data = pointrData.get(pointrId);
+    if (!data) return;
+    
+    const currentStreets = data.streets || [];
+    const availableStreets = allStreetsData || [];
+    
+    let tableHTML = `<table class="node-streets-table">
+        <thead>
+            <tr>
+                <th>Street ID</th>
+                <th>Street Name</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="nodeStreetsBody">`;
+    
+    currentStreets.forEach((streetId, index) => {
+        const street = availableStreets.find(s => s.id === streetId);
+        const streetName = street ? street.name : 'Unknown';
+        tableHTML += `<tr data-street-id="${streetId}">
+            <td>${streetId}</td>
+            <td>${streetName}</td>
+            <td><button type="button" class="btn-remove-street" data-index="${index}">Delete</button></td>
+        </tr>`;
+    });
+    
+    tableHTML += `</tbody></table>`;
+    
+    const streetsOptions = availableStreets.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+    
+    openModal(`
+        <div class="modal-content">
+            <h2>Set Node Streets</h2>
+            <div id="nodeStreetsContainer">
+                ${tableHTML}
+            </div>
+            <div class="form-group" style="margin-top: 15px;">
+                <label for="newStreetSelect">Add Street <span class="required">*</span>
+                    <select id="newStreetSelect">
+                        <option value="">Select a street</option>
+                        ${streetsOptions}
+                    </select>
+                </label>
+                <button type="button" class="btn-add-street" style="margin-top: 8px;">Add Row</button>
+            </div>
+            <div class="modal-error" id="modalError"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn-cancel" onclick="closeModal()">Huỷ</button>
+                <button type="button" class="btn-submit" id="nodeStreetsSave">Lưu</button>
+            </div>
+        </div>
+    `);
+    
+    // Handle delete buttons
+    document.querySelectorAll('.btn-remove-street').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.target.closest('tr').remove();
+        });
+    });
+    
+    // Handle add button
+    document.querySelector('.btn-add-street').addEventListener('click', (e) => {
+        e.preventDefault();
+        const select = document.getElementById('newStreetSelect');
+        const streetId = parseInt(select.value);
+        
+        if (!streetId) {
+            document.getElementById('modalError').textContent = 'Vui lòng chọn một street.';
+            return;
+        }
+        
+        const tbody = document.getElementById('nodeStreetsBody');
+        const street = availableStreets.find(s => s.id === streetId);
+        const newIndex = currentStreets.length;
+        
+        const row = document.createElement('tr');
+        row.setAttribute('data-street-id', streetId);
+        row.innerHTML = `
+            <td>${streetId}</td>
+            <td>${street.name}</td>
+            <td><button type="button" class="btn-remove-street" data-index="${newIndex}">Delete</button></td>
+        `;
+        
+        tbody.appendChild(row);
+        currentStreets.push(streetId);
+        
+        // Attach delete handler to new button
+        row.querySelector('.btn-remove-street').addEventListener('click', (e) => {
+            e.preventDefault();
+            row.remove();
+        });
+        
+        select.value = '';
+        document.getElementById('modalError').textContent = '';
+    });
+    
+    // Handle save
+    document.getElementById('nodeStreetsSave').addEventListener('click', (e) => {
+        e.preventDefault();
+        const rows = document.querySelectorAll('#nodeStreetsBody tr');
+        const newStreets = [];
+        
+        rows.forEach(row => {
+            const streetId = parseInt(row.getAttribute('data-street-id'));
+            if (streetId) newStreets.push(streetId);
+        });
+        
+        data.streets = newStreets;
+        closeModal();
+    });
+}
 
 function showAddBanModal(pointrId) {
     openModal(`
@@ -359,7 +477,15 @@ function handleGalleryClick(e) {
     const editor = document.querySelector('#editor');
     if (editor.value !== 'create') return;
 
-    const { pointr } = createPointr(e.clientX, e.clientY);
+    //use pixelToLatLon to get lat/lon of click position before creating pointr
+    const container = document.querySelector('.container');
+    const clickX = e.clientX + container.scrollLeft;
+    const clickY = e.clientY + container.scrollTop;
+    const sizePer = parseInt(document.getElementById('sSize').value) / 2400;
+    const { lat, lon } = pixelToLatLon(clickX, clickY, sizePer);
+    const streetSelect = document.getElementById('Streets');
+    const streetName = streetSelect.options[streetSelect.selectedIndex]?.text || 'Unknown Street';
+    const { pointr } = createPointr(clickX, clickY, streetName , lat, lon);
     document.querySelector('.coordinates').appendChild(pointr);
 }
 

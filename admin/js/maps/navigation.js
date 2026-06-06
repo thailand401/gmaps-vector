@@ -1,5 +1,8 @@
 // ==================== NAVIGATION ====================
 
+// Global variable to store all streets from database
+let allStreetsData = [];
+
 // Helper: populate a select, preserving negative-value options (Tạo Mới)
 function populateSelect(selectEl, items, labelKey, valueKey) {
     const negativeOpts = Array.from(selectEl.options).filter(o => parseInt(o.value) < 0);
@@ -155,6 +158,16 @@ function showCreateStreetModal() {
 
 // ==================== DATA LOADERS ====================
 
+async function loadAllStreets() {
+    try {
+        allStreetsData = await apiClient.getAllStreets();
+        console.log('[allStreetsData loaded]', allStreetsData);
+    } catch (e) {
+        console.error('Error loading all streets:', e);
+        allStreetsData = [];
+    }
+}
+
 async function loadCities() {
     try {
         const cities = await apiClient.getCities();
@@ -195,7 +208,8 @@ async function loadStreets(districtId = null, cityId = null) {
 
 // ==================== FILTER LISTENERS ====================
 
-function initFilterListeners() {
+async function initFilterListeners() {
+    await loadAllStreets(); // Load all streets data on init
     document.getElementById('Cities').addEventListener('change', (e) => {
         const val = e.target.value;
         if (val === '-1') { showCreateCityModal(); return; }
