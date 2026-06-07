@@ -17,4 +17,4 @@ echo "🔗 API: http://localhost:4000/api"
 echo ""
 
 # Start the HTTP server
-python -m http.server 4040
+python3 -m http.server 4040

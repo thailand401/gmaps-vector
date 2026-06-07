@@ -10,12 +10,14 @@ window.addEventListener('load', async () => {
     await loadLocations();
     enableGalleryDragScroll();
     initGalleryClickListener();
+    initPathSvg();
     initContainerScrollListener();
     initKeyboardListener();
     await initFilterListeners();
     initPointrDrag();
     initEditorListener();
     initSettings();
+    initSearch();
 
     // Test pointr
     const allPointrs = [

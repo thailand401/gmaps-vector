@@ -208,21 +208,86 @@ async function loadStreets(districtId = null, cityId = null) {
 
 // ==================== FILTER LISTENERS ====================
 
+const LS_CITY     = 'maps_city';
+const LS_DISTRICT = 'maps_district';
+const LS_STREET   = 'maps_street';
+
+function scrollToStreet(streetId) {
+    let found = null;
+    for (const [, d] of pointrReload) {
+        if (Array.isArray(d.streets) && d.streets.includes(streetId)) { found = d; break; }
+    }
+    if (!found) {
+        for (const [, d] of pointrData) {
+            if (Array.isArray(d.streets) && d.streets.includes(streetId)) { found = d; break; }
+        }
+    }
+    if (found) {
+        const container = document.querySelector('.container');
+        container.scrollLeft = found.initialClientX - container.clientWidth  / 2;
+        container.scrollTop  = found.initialClientY - container.clientHeight / 2;
+    }
+    drawStreetPath(streetId);
+}
+
 async function initFilterListeners() {
     await loadAllStreets(); // Load all streets data on init
+    await loadAllPointrsFromDB(); // Load all existing positions mapped to allStreetsData
+
+    // ── Restore last selected city / district / street ────────────────────────
+    const savedCity     = localStorage.getItem(LS_CITY);
+    const savedDistrict = localStorage.getItem(LS_DISTRICT);
+    const savedStreet   = localStorage.getItem(LS_STREET);
+
+    if (savedCity) {
+        const citySelect = document.getElementById('Cities');
+        citySelect.value = savedCity;
+        if (citySelect.value === savedCity) {
+            await loadDistricts(savedCity);
+        }
+    }
+    if (savedDistrict) {
+        const districtSelect = document.getElementById('Districts');
+        districtSelect.value = savedDistrict;
+        if (districtSelect.value === savedDistrict) {
+            const cityId = document.getElementById('Cities').value;
+            await loadStreets(savedDistrict, cityId !== 'all' ? cityId : null);
+        }
+    }
+    if (savedStreet) {
+        const streetSelect = document.getElementById('Streets');
+        streetSelect.value = savedStreet;
+        if (streetSelect.value === savedStreet) {
+            const streetId = parseInt(savedStreet);
+            if (streetId > 0) scrollToStreet(streetId);
+        }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     document.getElementById('Cities').addEventListener('change', (e) => {
         const val = e.target.value;
         if (val === '-1') { showCreateCityModal(); return; }
+        localStorage.setItem(LS_CITY, val);
+        localStorage.removeItem(LS_DISTRICT);
+        localStorage.removeItem(LS_STREET);
+        clearStreetPath();
         loadDistricts(val !== 'all' ? val : null);
     });
     document.getElementById('Districts').addEventListener('change', (e) => {
         const val = e.target.value;
         if (val === '-2') { showCreateDistrictModal(); return; }
+        localStorage.setItem(LS_DISTRICT, val);
+        localStorage.removeItem(LS_STREET);
+        clearStreetPath();
         const cityId = document.getElementById('Cities').value;
         loadStreets(val !== 'all' ? val : null, cityId !== 'all' ? cityId : null);
     });
     document.getElementById('Streets').addEventListener('change', (e) => {
-        if (e.target.value === '-3') { showCreateStreetModal(); }
+        if (e.target.value === '-3') { showCreateStreetModal(); return; }
+        const streetId = parseInt(e.target.value);
+        if (!streetId || streetId <= 0) return;
+        localStorage.setItem(LS_STREET, String(streetId));
+        scrollToStreet(streetId);
     });
     // Show modal listing streets and their newly created pointrs
     const saveBtn = document.getElementById('saveAll');

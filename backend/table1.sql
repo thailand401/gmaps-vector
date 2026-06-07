@@ -33,9 +33,7 @@ CREATE TABLE public.StreetPosition (
   pos_id bigint,
   street_id bigint,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
-  CONSTRAINT StreetPosition_pkey PRIMARY KEY (id),
-  CONSTRAINT StreetPosition_pos_id_fkey FOREIGN KEY (pos_id) REFERENCES public.Positions(id),
-  CONSTRAINT StreetPosition_street_id_fkey FOREIGN KEY (street_id) REFERENCES public.Streets(id)
+  CONSTRAINT StreetPosition_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.Streets (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,

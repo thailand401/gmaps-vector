@@ -178,17 +178,12 @@ class MapsService:
     @staticmethod
     async def get_positions(street_id: Optional[int] = None) -> List[Position]:
         try:
-                if street_id is not None:
-                    # find pos_ids from StreetPosition join table
-                    sp = supabase.table("StreetPosition").select("pos_id").eq("street_id", street_id).execute()
-                    pos_ids = [r['pos_id'] for r in sp.data] if sp.data else []
-                    if not pos_ids:
-                        return []
-                    # fetch positions by id in pos_ids
-                    result = supabase.table("Positions").select("*").in_("id", pos_ids).order("id").execute()
-                else:
-                    result = supabase.table("Positions").select("*").order("id").execute()
-                return [Position(**MapsService._db_pos_to_model(item)) for item in (result.data or [])]
+            if street_id is not None:
+                # Filter directly on Positions.streets JSON array
+                result = supabase.table("Positions").select("*").contains("streets", [street_id]).order("id").execute()
+            else:
+                result = supabase.table("Positions").select("*").order("id").execute()
+            return [Position(**MapsService._db_pos_to_model(item)) for item in (result.data or [])]
         except Exception as e:
             raise Exception(f"Failed to fetch positions: {str(e)}")
 
@@ -219,10 +214,7 @@ class MapsService:
             if not result.data:
                 raise Exception("Failed to insert position")
             pos = result.data[0]
-            # if street_id provided, insert relation into StreetPosition
-            if getattr(data, 'street_id', None):
-                supabase.table("StreetPosition").insert({"pos_id": pos['id'], "street_id": data.street_id}).execute()
-            # also append to Streets.positions JSON column if exists
+            # append to Streets.positions JSON column if street_id provided
             if getattr(data, 'street_id', None):
                 try:
                     street_row = supabase.table("Streets").select("positions").eq("id", data.street_id).limit(1).execute()
@@ -255,42 +247,143 @@ class MapsService:
             raise Exception(f"Failed to delete position: {str(e)}")
 
     @staticmethod
-    async def create_positions_bulk(streets_payload: list) -> list:
-        """streets_payload: [{id: street_id, points: [{lat, lon}, ...]}, ...]
-        Inserts positions and updates Streets.positions arrays accordingly.
-        Returns list of created position records.
+    async def create_positions_bulk(positions_payload: list) -> list:
+        """positions_payload: [{lat, lon, streets: [street_id, ...], pos_id?}, ...]
+        Each item is ONE unique position carrying its complete streets array.
+        pos_id present → UPDATE existing Positions row and sync Streets.positions arrays.
+        pos_id absent  → INSERT new row, then add its id to all relevant Streets.positions arrays.
+        Returns list of affected position records.
         """
         created = []
         try:
-            for street in streets_payload:
-                street_id = int(street.get('id'))
-                points = street.get('points') or []
-                for pt in points:
-                    lat = float(pt.get('lat'))
-                    lon = float(pt.get('lon'))
+            for pt in positions_payload:
+                lat     = float(pt.get('lat'))
+                lon     = float(pt.get('lon'))
+                streets = [int(s) for s in (pt.get('streets') or [])]
+                pos_id  = pt.get('pos_id')
+
+                if pos_id:
+                    # ── UPDATE existing position ──────────────────────────────────
+                    pos_id = int(pos_id)
+                    # Fetch old streets so we can diff
+                    existing_pos = supabase.table("Positions").select("streets").eq("id", pos_id).limit(1).execute()
+                    old_streets = list((existing_pos.data[0].get('streets') or []) if existing_pos.data else [])
+
+                    result = supabase.table("Positions").update({"long": lon, "lat": lat, "streets": streets}).eq("id", pos_id).execute()
+                    if result.data:
+                        created.append(result.data[0])
+
+                    # Remove pos_id from Streets that are no longer associated
+                    for sid in old_streets:
+                        if sid not in streets:
+                            try:
+                                sr = supabase.table("Streets").select("positions").eq("id", sid).limit(1).execute()
+                                if sr.data:
+                                    existing = [i for i in (sr.data[0].get('positions') or []) if i != pos_id]
+                                    supabase.table("Streets").update({"positions": existing}).eq("id", sid).execute()
+                            except Exception:
+                                pass
+                    # Add pos_id to Streets newly associated
+                    for sid in streets:
+                        if sid not in old_streets:
+                            try:
+                                sr = supabase.table("Streets").select("positions").eq("id", sid).limit(1).execute()
+                                if sr.data:
+                                    existing = list(sr.data[0].get('positions') or [])
+                                    if pos_id not in existing:
+                                        existing.append(pos_id)
+                                        supabase.table("Streets").update({"positions": existing}).eq("id", sid).execute()
+                            except Exception:
+                                pass
+                else:
+                    # ── INSERT new position ───────────────────────────────────────
                     next_id = _next_id("Positions")
-                    payload = {"id": next_id, "long": lon, "lat": lat, "streets": [street_id]}
+                    payload = {"id": next_id, "long": lon, "lat": lat, "streets": streets}
                     result = supabase.table("Positions").insert(payload).execute()
                     if not result.data:
                         raise Exception("Failed to insert position")
                     pos = result.data[0]
                     created.append(pos)
-                    # insert into StreetPosition relation
-                    supabase.table("StreetPosition").insert({"pos_id": pos['id'], "street_id": street_id}).execute()
-                    # append to Streets.positions JSON column if exists
-                    try:
-                        street_row = supabase.table("Streets").select("positions").eq("id", street_id).limit(1).execute()
-                        existing = []
-                        if street_row.data and 'positions' in street_row.data[0] and street_row.data[0]['positions']:
-                            existing = list(street_row.data[0]['positions'])
-                        existing.append(pos['id'])
-                        supabase.table("Streets").update({"positions": existing}).eq("id", street_id).execute()
-                    except Exception:
-                        pass
+                    # Append new position id to every associated Street.positions array
+                    for sid in streets:
+                        try:
+                            sr = supabase.table("Streets").select("positions").eq("id", sid).limit(1).execute()
+                            if sr.data:
+                                existing = list(sr.data[0].get('positions') or [])
+                                if pos['id'] not in existing:
+                                    existing.append(pos['id'])
+                                    supabase.table("Streets").update({"positions": existing}).eq("id", sid).execute()
+                        except Exception:
+                            pass
 
             return created
         except Exception as e:
-            raise Exception(f"Failed to create positions bulk: {str(e)}")
+            raise Exception(f"Failed to create/update positions bulk: {str(e)}")
+
+    @staticmethod
+    async def search_nearest(points: list) -> dict:
+        """Given a list of {lat, lon} query points, return the nearest DB position for each.
+        Uses Euclidean distance on lat/lon (sufficient for small geographic areas).
+        Returns {data, label, warning, message}.
+        """
+        import math
+
+        def euclidean(lat1, lon1, lat2, lon2):
+            dlat = lat1 - lat2
+            dlon = (lon1 - lon2) * math.cos(math.radians((lat1 + lat2) / 2))
+            return math.sqrt(dlat * dlat + dlon * dlon)
+
+        try:
+            # Fetch all positions
+            result = supabase.table("Positions").select("*").execute()
+            all_positions = result.data or []
+
+            if not all_positions:
+                return {"data": [], "label": "Tìm kiếm", "warning": "", "message": "Không có điểm nào trong CSDL."}
+
+            # Fetch street names for label resolution
+            streets_result = supabase.table("Streets").select("id, name").execute()
+            street_map = {s["id"]: s["name"] for s in (streets_result.data or [])}
+
+            data = []
+            for qpt in points:
+                qlat = float(qpt.get("lat"))
+                qlon = float(qpt.get("lon"))
+                best = None
+                best_dist = float("inf")
+                for pos in all_positions:
+                    plat = pos.get("lat")
+                    plon = pos.get("long")
+                    if plat is None or plon is None:
+                        continue
+                    d = euclidean(qlat, qlon, float(plat), float(plon))
+                    if d < best_dist:
+                        best_dist = d
+                        best = pos
+                if best:
+                    street_ids = best.get("streets") or []
+                    street_names = [street_map.get(sid, str(sid)) for sid in street_ids]
+                    # convert degrees distance to approximate metres (1 deg ≈ 111 km)
+                    dist_m = round(best_dist * 111000, 1)
+                    data.append({
+                        "id": best["id"],
+                        "lat": best["lat"],
+                        "lon": best["long"],
+                        "streets": street_ids,
+                        "street_names": street_names,
+                        "distance_m": dist_m,
+                        "query_lat": qlat,
+                        "query_lon": qlon,
+                    })
+
+            return {
+                "data": data,
+                "label": f"{len(data)} điểm gần nhất",
+                "warning": "",
+                "message": ""
+            }
+        except Exception as e:
+            raise Exception(f"Search nearest failed: {str(e)}")
 
     @staticmethod
     async def delete_position_cascade(position_id: int) -> bool:
@@ -313,8 +406,6 @@ class MapsService:
                                 supabase.table("Streets").update({"positions": existing}).eq("id", sid).execute()
                     except Exception:
                         pass
-            # delete any StreetPosition relations
-            supabase.table("StreetPosition").delete().eq("pos_id", position_id).execute()
             # delete the position
             supabase.table("Positions").delete().eq("id", position_id).execute()
 

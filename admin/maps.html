@@ -38,6 +38,24 @@
         <div id="modal" class="modal"></div>
     </div>
 
+    <!-- Search -->
+    <button id="searchBtn" class="search-btn" title="Search">🔍</button>
+    <div id="searchModal" class="search-modal" style="display:none;">
+        <div class="search-modal-content">
+            <div class="search-modal-title">Search Points</div>
+            <div class="search-row">
+                <input type="number" id="sLat1" class="search-input" value="10.783574" step="any">
+                <input type="number" id="sLon1" class="search-input" value="106.653222" step="any">
+            </div>
+            <div class="search-row">
+                <input type="number" id="sLat2" class="search-input" value="10.802353" step="any">
+                <input type="number" id="sLon2" class="search-input" value="106.652561" step="any">
+            </div>
+            <button id="searchSubmit" class="search-submit">Search</button>
+            <div id="searchResult" class="search-result"></div>
+        </div>
+    </div>
+
     <!-- Settings -->
     <button id="settingsBtn" class="settings-btn" title="Settings">⚙</button>
     <div id="settingsPanel" class="settings-panel">
@@ -54,6 +72,10 @@
             <input type="checkbox" id="sIsBorder" checked>
             Border
         </label>
+        <label class="settings-label">
+            Opacity
+            <input type="range" id="sOpacity" value="100" min="0" max="100" step="1" style="width:100%;">
+        </label>
         <button id="settingsSave" class="settings-save">Save</button>
     </div>
 
@@ -62,6 +84,7 @@
     <script src="js/maps/navigation.js"></script>
     <script src="js/maps/settings.js"></script>
     <script src="js/maps/pointr.js"></script>
+    <script src="js/maps/search.js"></script>
     <script src="js/maps.js"></script>
 </body>
 </html>

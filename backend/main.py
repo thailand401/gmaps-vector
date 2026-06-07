@@ -393,8 +393,9 @@ async def create_position(position: PositionCreate):
 
 @app.post("/api/positions/bulk")
 async def create_positions_bulk(payload: List[dict] = Body(...)):
-    """Accepts an array of streets with points and creates Positions and updates Streets.positions.
-    Expected payload: [{ id: street_id, points: [{lat: number, lon: number}, ...] }, ...]
+    """Accepts a flat array of unique positions and upserts them.
+    Expected payload: [{lat, lon, streets: [street_id, ...], pos_id?}, ...]
+    pos_id present → UPDATE; absent → INSERT.
     """
     try:
         created = await MapsService.create_positions_bulk(payload)
@@ -428,6 +429,24 @@ async def delete_position_cascade(position_id: int):
         return {"message": "Position deleted and Streets updated"}
     except Exception as e:
         logger.error(f"Error deleting position cascade: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/search")
+async def search_nearest(payload: dict = Body(...)):
+    """Find the nearest DB position for each query point.
+    Expected: {points: [{lat, lon}, ...]}  (1 or 2 points)
+    Returns:  {data, label, warning, message}
+    """
+    try:
+        points = payload.get("points") or []
+        if not points:
+            raise HTTPException(status_code=422, detail="points array is required")
+        return await MapsService.search_nearest(points)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error searching nearest: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

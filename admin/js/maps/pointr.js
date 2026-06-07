@@ -1,9 +1,93 @@
 // ==================== POINTR STATE ====================
 
 let pointrIdCounter = 0;
-const pointrData = new Map();
+const pointrData = new Map();   // new/edited pointrs (to be saved/updated)
+const pointrReload = new Map(); // pointrs loaded from DB (read-only until edited)
+const renderedDbIds = new Set(); // tracks DB position ids already rendered — prevents duplicate render
 let activePointrId = null;
 let isDragging = false;
+let activeStreetPathId = null; // street currently being visualised with a path
+
+// ==================== RELOAD HELPERS ====================
+
+/**
+ * Move a reload pointr into pointrData so it gets included in the next save (update path).
+ * No-op if the pointr is already in pointrData or doesn't exist.
+ */
+function markPointrAsEdited(pointrId) {
+    if (!pointrReload.has(pointrId)) return;
+    const data = pointrReload.get(pointrId);
+    pointrData.set(pointrId, data);
+    pointrReload.delete(pointrId);
+    if (data.element) data.element.classList.remove('pointr-reload');
+    console.log(`[pointr] #${pointrId} moved to edit queue (dbId=${data.dbId})`);
+}
+
+/**
+ * Fetch ALL positions from DB and render them as reload pointrs.
+ * Street names are resolved from allStreetsData.
+ * Already-loaded positions (by dbId) are skipped to avoid duplicates.
+ */
+async function loadAllPointrsFromDB() {
+    // renderedDbIds is module-level; also sync from current maps in case of hot-reload edge cases
+    pointrReload.forEach(d => { if (d.dbId) renderedDbIds.add(d.dbId); });
+    pointrData.forEach(d => { if (d.dbId) renderedDbIds.add(d.dbId); });
+
+    try {
+        const resp = await fetch('http://localhost:4000/api/positions');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const positions = await resp.json();
+        if (!Array.isArray(positions) || positions.length === 0) return;
+
+        const sizePer = parseInt(document.getElementById('sSize').value) / 2400;
+        const coordinatesEl = document.querySelector('.coordinates');
+
+        positions.forEach(pos => {
+            if (!pos.id || renderedDbIds.has(pos.id)) return;
+            // pos.y = lat, pos.x = lon (from backend _db_pos_to_model)
+            if (pos.y == null || pos.x == null) return;
+
+            // Resolve street name(s) from allStreetsData
+            const streetIds = Array.isArray(pos.streets) ? pos.streets : [];
+            const streetName = streetIds
+                .map(sid => (typeof allStreetsData !== 'undefined' ? allStreetsData : []).find(s => s.id === sid)?.name)
+                .filter(Boolean)
+                .join(' - ');
+
+            const pixelPos = latLonToPixel(pos.y, pos.x, sizePer);
+            const { pointr, pointrId } = createPointr(pixelPos.left, pixelPos.top, streetName, pos.y, pos.x);
+
+            // createPointr adds to pointrData; move the entry to pointrReload
+            const data = pointrData.get(pointrId);
+            if (data) {
+                data.dbId    = pos.id;
+                data.streets = streetIds;
+                pointrReload.set(pointrId, data);
+                pointrData.delete(pointrId);
+            }
+
+            // Sync streetPointsList entry with DB values
+            const sp = streetPointsList.find(p => p.id === pointrId);
+            if (sp) {
+                sp.streetId  = streetIds[0] ?? null;
+                sp.ban       = Array.isArray(pos.ban) ? pos.ban : [];
+                sp.speed     = pos.speed     ?? null;
+                sp.park      = pos.park      ?? null;
+                sp.lane      = pos.lane      ?? null;
+                sp.toll      = pos.tool      ?? null; // DB column is 'tool'
+                sp.flooding  = pos.flooding  ?? null;
+            }
+
+            pointr.classList.add('pointr-reload');
+            coordinatesEl.appendChild(pointr);
+            renderedDbIds.add(pos.id);
+        });
+
+        console.log(`[loadAllPointrsFromDB] loaded ${positions.length} position(s)`);
+    } catch (err) {
+        console.error('[loadAllPointrsFromDB] Error:', err);
+    }
+}
 
 // ==================== STREET POINTS LIST ====================
 
@@ -47,10 +131,74 @@ function updatePointrPositions() {
     const container = document.querySelector('.container');
     const scrollLeft = container.scrollLeft;
     const scrollTop = container.scrollTop;
-    pointrData.forEach((data) => {
+    const applyPos = (data) => {
         data.element.style.left = (data.initialClientX - scrollLeft) + 'px';
-        data.element.style.top = (data.initialClientY - scrollTop) + 'px';
-    });
+        data.element.style.top  = (data.initialClientY - scrollTop)  + 'px';
+    };
+    pointrData.forEach(applyPos);
+    pointrReload.forEach(applyPos);
+    refreshStreetPath();
+}
+
+// ==================== STREET PATH ====================
+
+function collectStreetPointrs(streetId) {
+    const pts = [];
+    pointrReload.forEach(d => { if (Array.isArray(d.streets) && d.streets.includes(streetId)) pts.push(d); });
+    pointrData.forEach(d => {   if (Array.isArray(d.streets) && d.streets.includes(streetId)) pts.push(d); });
+    return pts;
+}
+
+function nearestNeighborSort(pts) {
+    if (pts.length <= 1) return [...pts];
+    const rem = [...pts];
+    const result = [];
+    let cur = rem.splice(0, 1)[0];
+    result.push(cur);
+    while (rem.length > 0) {
+        let minD = Infinity, minI = 0;
+        for (let i = 0; i < rem.length; i++) {
+            const dx = rem[i].initialClientX - cur.initialClientX;
+            const dy = rem[i].initialClientY - cur.initialClientY;
+            const d = dx * dx + dy * dy;
+            if (d < minD) { minD = d; minI = i; }
+        }
+        cur = rem.splice(minI, 1)[0];
+        result.push(cur);
+    }
+    return result;
+}
+
+function drawStreetPath(streetId) {
+    activeStreetPathId = streetId;
+    refreshStreetPath();
+}
+
+function clearStreetPath() {
+    activeStreetPathId = null;
+    const svg = document.getElementById('street-path-svg');
+    if (svg) svg.innerHTML = '';
+}
+
+function refreshStreetPath() {
+    const svg = document.getElementById('street-path-svg');
+    if (!svg) return;
+    svg.innerHTML = '';
+    if (!activeStreetPathId) return;
+    const pts = collectStreetPointrs(activeStreetPathId);
+    if (pts.length < 2) return;
+    const sorted = nearestNeighborSort(pts);
+    const container = document.querySelector('.container');
+    const sl = container.scrollLeft;
+    const st = container.scrollTop;
+    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    polyline.setAttribute('points', sorted.map(d => `${d.initialClientX - sl},${d.initialClientY - st}`).join(' '));
+    polyline.setAttribute('fill', 'none');
+    polyline.setAttribute('stroke', '#2196F3');
+    polyline.setAttribute('stroke-width', '2');
+    polyline.setAttribute('stroke-dasharray', '6,3');
+    polyline.setAttribute('opacity', '0.8');
+    svg.appendChild(polyline);
 }
 
 // ==================== POINTR CREATION ====================
@@ -164,6 +312,8 @@ function showPointrSubmenu(pointrId, anchorEl) {
 }
 
 function handleSubmenuAction(action, pointrId) {
+    // Any edit action on a reload pointr moves it into pointrData for update
+    if (action !== 'delete') markPointrAsEdited(pointrId);
     switch (action) {
         case 'set-node':     showSetNodeModal(pointrId);                                             break;
         case 'add-ban':      showAddBanModal(pointrId);                                              break;
@@ -178,10 +328,22 @@ function handleSubmenuAction(action, pointrId) {
 
 function deletePointr(pointrId) {
     closePointrSubmenu();
-    const data = pointrData.get(pointrId);
-    if (data) { data.element.remove(); pointrData.delete(pointrId); }
+    const data = pointrData.get(pointrId) || pointrReload.get(pointrId);
+    if (data) {
+        // If this pointr exists in DB, delete it cascade (remove from Positions + Streets.positions)
+        if (data.dbId) {
+            fetch(`http://localhost:4000/api/positions/${data.dbId}/cascade`, { method: 'DELETE' })
+                .then(r => { if (!r.ok) r.text().then(t => console.error('[deletePointr] cascade failed:', t)); })
+                .catch(err => console.error('[deletePointr] cascade error:', err));
+        }
+        if (data.dbId) renderedDbIds.delete(data.dbId);
+        data.element.remove();
+        pointrData.delete(pointrId);
+        pointrReload.delete(pointrId);
+    }
     removeFromStreetPoints(pointrId);
     if (activePointrId === pointrId) { activePointrId = null; updateActivePointrVisual(); }
+    refreshStreetPath();
 }
 
 // ==================== POINTR MODALS ====================
@@ -296,6 +458,16 @@ function showSetNodeModal(pointrId) {
         });
         
         data.streets = newStreets;
+
+        // Update tooltip to reflect new street names
+        const tooltip = data.element ? data.element.querySelector('.pointr-tooltip') : null;
+        if (tooltip) {
+            const names = newStreets
+                .map(sid => (typeof allStreetsData !== 'undefined' ? allStreetsData : []).find(s => s.id === sid)?.name)
+                .filter(Boolean);
+            tooltip.textContent = names.join(' - ') || tooltip.textContent;
+        }
+
         closeModal();
     });
 }
@@ -401,46 +573,29 @@ function showSetBoolModal(pointrId, key, title) {
 // ==================== SAVE ALL / SUMMARY MODAL ====================
 
 function showSaveAllModal() {
-    const groups = {};
-    // Prefer using pointrData entries and their `streets` array.
-    pointrData.forEach((data, id) => {
-        const streetsArr = Array.isArray(data.streets) && data.streets.length ? data.streets : null;
-        if (streetsArr) {
-            streetsArr.forEach(sid => {
-                if (!sid) return;
-                // only include if street exists in allStreetsData
+    // Collect unique pointrs — each appears once, carrying its full streets array
+    const pointrsList = [];
+    pointrData.forEach((data) => {
+        const streets = Array.isArray(data.streets)
+            ? data.streets.filter(sid => {
                 if (typeof allStreetsData !== 'undefined' && Array.isArray(allStreetsData)) {
-                    const exists = allStreetsData.find(s => s.id === sid);
-                    if (!exists) return; // skip non-existent street
+                    return !!allStreetsData.find(s => s.id === sid);
                 }
-                if (!groups[sid]) groups[sid] = [];
-                const tooltip = data && data.element ? data.element.querySelector('.pointr-tooltip') : null;
-                const name = tooltip ? tooltip.textContent : (data && data.lat ? `${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}` : `Pointr ${data.id}`);
-                groups[sid].push({ id: data.id, name, lat: data.lat, lon: data.lon });
-            });
-        } else {
-            // fallback to streetPointsList entry (older code path)
-            const sp = streetPointsList.find(p => p.id === data.id);
-            if (sp && sp.streetId) {
-                const sid = sp.streetId;
-                if (typeof allStreetsData !== 'undefined' && Array.isArray(allStreetsData)) {
-                    const exists = allStreetsData.find(s => s.id === sid);
-                    if (!exists) return;
-                }
-                if (!groups[sid]) groups[sid] = [];
-                const tooltip = data && data.element ? data.element.querySelector('.pointr-tooltip') : null;
-                const name = tooltip ? tooltip.textContent : (data && data.lat ? `${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}` : `Pointr ${data.id}`);
-                groups[sid].push({ id: data.id, name });
-            }
-        }
+                return true;
+            })
+            : [];
+        if (streets.length === 0) return; // skip pointrs not linked to any known street
+        const tooltip = data.element ? data.element.querySelector('.pointr-tooltip') : null;
+        const name = tooltip ? tooltip.textContent
+            : (data.lat != null ? `${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}` : `Pointr ${data.id}`);
+        pointrsList.push({ id: data.id, name, lat: data.lat, lon: data.lon, streets, dbId: data.dbId || null });
     });
 
-    const streetIds = Object.keys(groups);
-    if (streetIds.length === 0) {
+    if (pointrsList.length === 0) {
         openModal(`
             <div class="modal-content">
-                <h2>Roads with New Pointrs</h2>
-                <div class="modal-context">Không có Pointr nào được tạo cho các đường (hoặc các đường không tồn tại).</div>
+                <h2>Save Pointrs</h2>
+                <div class="modal-context">Không có Pointr nào cần lưu (hoặc chưa được gán street).</div>
                 <div class="modal-actions">
                     <button type="button" class="btn-cancel" onclick="closeModal()">Đóng</button>
                 </div>
@@ -449,35 +604,38 @@ function showSaveAllModal() {
         return;
     }
 
-    let html = `<div class="modal-content"><h2>Roads with New Pointrs</h2><div class="modal-context">Danh sách các đường và Pointr mới:</div>`;
-    streetIds.forEach(sid => {
-        const sidNum = parseInt(sid);
-        const street = (typeof allStreetsData !== 'undefined' && allStreetsData) ? allStreetsData.find(s => s.id === sidNum) : null;
-        const streetName = street ? street.name : `Street ${sid}`;
-        html += `<div style="margin:8px 0;font-size:12px;"><strong>__${streetName}</strong><ul style="margin:6px 0 0 18px;">`;
-                groups[sid].forEach(pt => {
-            html += `<li>|_____${escapeHtml(pt.name)} <span style="color:#777;font-size:11px;margin-left:8px">(#${pt.id})</span></li>`;
-        });
-        html += `</ul></div>`;
+    let html = `<div class="modal-content"><h2>Save Pointrs</h2><div class="modal-context">Danh sách Pointr sẽ được lưu:</div><ul style="margin:8px 0 0 18px;font-size:12px;">`;
+    pointrsList.forEach(pt => {
+        const streetNames = pt.streets
+            .map(sid => (typeof allStreetsData !== 'undefined' ? allStreetsData : []).find(s => s.id === sid)?.name)
+            .filter(Boolean).join(' - ');
+        html += `<li style="margin:4px 0">${escapeHtml(pt.name)} <span style="color:#777;font-size:11px;margin-left:6px">[${escapeHtml(streetNames)}]</span> <span style="color:#777;font-size:11px;margin-left:6px">(#${pt.id}${pt.dbId ? ' ✏️ update' : ' 🆕 new'})</span></li>`;
     });
-    html += `<div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal()">Đóng</button><button type="button" class="btn-submit" id="confirmSaveAll">Confirm</button></div></div>`;
+    html += `</ul><div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal()">Đóng</button><button type="button" class="btn-submit" id="confirmSaveAll">Confirm</button></div></div>`;
 
     openModal(html);
 
     // Attach Confirm handler
     document.getElementById('confirmSaveAll').addEventListener('click', async (e) => {
         e.preventDefault();
-        // Build payload: [{ id: streetId, points: [{lat, lon}, ...] }, ...]
-        const payload = [];
-        streetIds.forEach(sid => {
-            const pts = groups[sid]
-                .map(p => ({ lat: p.lat, lon: p.lon }))
-                .filter(p => typeof p.lat === 'number' && !isNaN(p.lat) && typeof p.lon === 'number' && !isNaN(p.lon));
-            if (pts.length) payload.push({ id: parseInt(sid), points: pts });
-        });
+        const confirmBtn = document.getElementById('confirmSaveAll');
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Saving...';
+
+        // payload: [{lat, lon, streets: [...], pos_id?}] — one entry per unique position
+        const payload = pointrsList
+            .filter(p => typeof p.lat === 'number' && !isNaN(p.lat) && typeof p.lon === 'number' && !isNaN(p.lon))
+            .map(p => {
+                const pt = { lat: p.lat, lon: p.lon, streets: p.streets };
+                if (p.dbId) pt.pos_id = p.dbId;
+                return pt;
+            });
+
         console.log('positions bulk payload:', JSON.stringify(payload));
         if (payload.length === 0) {
             alert('No valid points to save.');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Confirm';
             return;
         }
 
@@ -491,12 +649,15 @@ function showSaveAllModal() {
                 const txt = await resp.text();
                 throw new Error(txt || 'Server error');
             }
-            const data = await resp.json();
+            await resp.json();
             closeModal();
             alert('Saved positions successfully.');
         } catch (err) {
             console.error(err);
-            document.getElementById('modalError').textContent = 'Lỗi khi lưu: ' + (err.message || err);
+            const errEl = document.getElementById('modalError');
+            if (errEl) errEl.textContent = 'Lỗi khi lưu: ' + (err.message || err);
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Confirm';
         }
     });
 }
@@ -514,6 +675,7 @@ function escapeHtml(text) {
 
 function movePointr(direction) {
     if (!activePointrId) return;
+    markPointrAsEdited(activePointrId);
     const data = pointrData.get(activePointrId);
     if (!data) return;
     const step = 0.5;
@@ -523,6 +685,10 @@ function movePointr(direction) {
         case 'ArrowLeft':  data.initialClientX -= step; break;
         case 'ArrowRight': data.initialClientX += step; break;
     }
+    const sizePer = parseInt(document.getElementById('sSize').value) / 2400;
+    const { lat: newLat, lon: newLon } = pixelToLatLon(data.initialClientX, data.initialClientY, sizePer);
+    data.lat = newLat;
+    data.lon = newLon;
     updatePointrPositions();
 }
 
@@ -530,7 +696,7 @@ function rescalePointrs(oldSize, newSize) {
     if (!oldSize || !newSize || oldSize === newSize) return;
     const ratio = newSize / oldSize;
     const sizePer = newSize / 2400;
-    pointrData.forEach((data) => {
+    const rescaleEntry = (data) => {
         if (data.lat !== null && data.lon !== null) {
             const pos = latLonToPixel(data.lat, data.lon, sizePer);
             data.initialClientX = pos.left;
@@ -539,7 +705,9 @@ function rescalePointrs(oldSize, newSize) {
             data.initialClientX *= ratio;
             data.initialClientY *= ratio;
         }
-    });
+    };
+    pointrData.forEach(rescaleEntry);
+    pointrReload.forEach(rescaleEntry);
     updatePointrPositions();
 }
 
@@ -599,12 +767,20 @@ function handleGalleryClick(e) {
     const streetName = streetSelect.options[streetSelect.selectedIndex]?.text || 'Unknown Street';
     const { pointr } = createPointr(clickX, clickY, streetName , lat, lon);
     document.querySelector('.coordinates').appendChild(pointr);
+    refreshStreetPath();
 }
 
 // ==================== INIT ====================
 
 function initGalleryClickListener() {
     document.querySelector('.gallery').addEventListener('click', handleGalleryClick);
+}
+
+function initPathSvg() {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'street-path-svg';
+    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:49;overflow:visible;';
+    document.querySelector('.coordinates').appendChild(svg);
 }
 
 function initContainerScrollListener() {
@@ -626,11 +802,16 @@ function initKeyboardListener() {
 function initPointrDrag() {
     document.addEventListener('mousemove', (e) => {
         if (!isDragging || activePointrId === null) return;
+        markPointrAsEdited(activePointrId);
         const data = pointrData.get(activePointrId);
         if (!data) { isDragging = false; return; }
         const container = document.querySelector('.container');
         data.initialClientX = e.clientX + container.scrollLeft;
         data.initialClientY = e.clientY + container.scrollTop;
+        const sizePer = parseInt(document.getElementById('sSize').value) / 2400;
+        const { lat: newLat, lon: newLon } = pixelToLatLon(data.initialClientX, data.initialClientY, sizePer);
+        data.lat = newLat;
+        data.lon = newLon;
         data.element.style.left = e.clientX + 'px';
         data.element.style.top = e.clientY + 'px';
     });

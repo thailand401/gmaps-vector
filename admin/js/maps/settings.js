@@ -50,10 +50,17 @@ function initSettings() {
     window._gallerySettings = {
         items: parseInt(document.getElementById('sItems').value) || 23,
         size: _prevSize,
-        isBorder: document.getElementById('sIsBorder').checked
+        isBorder: document.getElementById('sIsBorder').checked,
+        opacity: parseInt(document.getElementById('sOpacity').value) ?? 100
     };
 
-    document.getElementById('sSize').addEventListener('input', () => {
+    document.getElementById('sOpacity').addEventListener('input', () => {
+        const opacity = parseInt(document.getElementById('sOpacity').value) / 100;
+        document.getElementById('gallery').style.opacity = opacity;
+        if (window._gallerySettings) window._gallerySettings.opacity = parseInt(document.getElementById('sOpacity').value);
+    });
+
+    document.getElementById('sSize').addEventListener('change', () => {
         const items = parseInt(document.getElementById('sItems').value) || 23;
         const newSize = parseInt(document.getElementById('sSize').value);
         if (!newSize || newSize < 1) return;
@@ -68,6 +75,7 @@ function initSettings() {
         const items = parseInt(document.getElementById('sItems').value) || 23;
         const newSize = parseInt(document.getElementById('sSize').value) || 400;
         const isBorder = document.getElementById('sIsBorder').checked;
+        const opacity = parseInt(document.getElementById('sOpacity').value) / 100;
         const oldSize = _prevSize || (window._gallerySettings && window._gallerySettings.size);
 
         document.querySelector('.gallery').style.gridTemplateColumns = `repeat(${items}, ${newSize}px)`;
@@ -75,10 +83,11 @@ function initSettings() {
         document.querySelectorAll('.gallery-item img').forEach(img => {
             img.style.border = isBorder ? '' : 'none';
         });
+        document.getElementById('gallery').style.opacity = opacity;
 
         rescalePointrs(oldSize, newSize);
         _prevSize = newSize;
-        window._gallerySettings = { items, size: newSize, isBorder };
+        window._gallerySettings = { items, size: newSize, isBorder, opacity: parseInt(document.getElementById('sOpacity').value) };
         panel.classList.remove('open');
     });
 }
