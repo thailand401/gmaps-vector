@@ -322,66 +322,252 @@ class MapsService:
 
     @staticmethod
     async def search_nearest(points: list) -> dict:
-        """Given a list of {lat, lon} query points, return the nearest DB position for each.
-        Uses Euclidean distance on lat/lon (sufficient for small geographic areas).
-        Returns {data, label, warning, message}.
+        """
+        1 query point  → return nearest DB position.
+        2 query points → find nearest DB node to each, then run Dijkstra on the
+                         street-adjacency graph to return the shortest path array.
+        Graph: positions are nodes; two positions are adjacent iff they share ≥1 street.
+        Edge weight = Haversine distance (metres).
+        Returns `tts` field: natural Vietnamese navigation text with street names,
+        turn directions, and congestion warnings (speed.normal < 20 km/h).
         """
         import math
+        import heapq
 
-        def euclidean(lat1, lon1, lat2, lon2):
-            dlat = lat1 - lat2
-            dlon = (lon1 - lon2) * math.cos(math.radians((lat1 + lat2) / 2))
-            return math.sqrt(dlat * dlat + dlon * dlon)
+        def haversine_m(lat1, lon1, lat2, lon2):
+            R = 6_371_000
+            phi1, phi2 = math.radians(lat1), math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlam = math.radians(lon2 - lon1)
+            a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+        def bearing_deg(lat1, lon1, lat2, lon2):
+            phi1 = math.radians(lat1)
+            phi2 = math.radians(lat2)
+            dl   = math.radians(lon2 - lon1)
+            x = math.sin(dl) * math.cos(phi2)
+            y = math.cos(phi1) * math.sin(phi2) - math.sin(phi1) * math.cos(phi2) * math.cos(dl)
+            return (math.degrees(math.atan2(x, y)) + 360) % 360
+
+        def turn_vi(b_in, b_out):
+            diff = (b_out - b_in + 360) % 360
+            if diff <= 30 or diff >= 330:
+                return "đi thẳng"
+            elif diff < 150:
+                return "rẽ phải"
+            elif diff < 210:
+                return "quay đầu"
+            else:
+                return "rẽ trái"
+
+        def is_congested(pos_row):
+            speed = pos_row.get("speed")
+            if isinstance(speed, dict):
+                normal = speed.get("normal")
+                try:
+                    return normal is not None and float(normal) < 20
+                except (ValueError, TypeError):
+                    pass
+            return False
+
+        def build_tts(path_pts, pos_by_id_map, s_map, total_m):
+            if not path_pts:
+                return ""
+            if len(path_pts) == 1:
+                snames = path_pts[0]["street_names"]
+                loc = snames[0] if snames else "vị trí không xác định"
+                return f"Vị trí gần nhất nằm trên {loc}."
+
+            # Street shared between each consecutive pair of path nodes
+            segment_streets = []
+            for i in range(len(path_pts) - 1):
+                shared = set(path_pts[i]["streets"]) & set(path_pts[i + 1]["streets"])
+                segment_streets.append(list(shared)[0] if shared else None)
+
+            instructions = []
+            current_sid = segment_streets[0]
+            start_name = s_map.get(current_sid, "đường không xác định")
+            instructions.append(f"Xuất phát từ {start_name}")
+
+            for i in range(1, len(path_pts)):
+                pt      = path_pts[i]
+                pos_row = pos_by_id_map.get(pt["id"], {})
+
+                # Congestion warning
+                if is_congested(pos_row):
+                    loc = " - ".join(pt["street_names"]) if pt["street_names"] else "điểm này"
+                    instructions.append(f"Lưu ý kẹt xe tại {loc}")
+
+                # Detect street change at this node
+                new_sid = segment_streets[i] if i < len(segment_streets) else None
+                if new_sid is not None and new_sid != current_sid:
+                    # Bearings: incoming (i-1 → i) and outgoing (i → i+1)
+                    p_prev = path_pts[i - 1]
+                    p_curr = pt
+                    p_next = path_pts[i + 1]   # always valid: i < len(segment_streets) ensures i+1 exists
+                    b_in  = bearing_deg(float(p_prev["lat"]), float(p_prev["lon"]),
+                                        float(p_curr["lat"]), float(p_curr["lon"]))
+                    b_out = bearing_deg(float(p_curr["lat"]), float(p_curr["lon"]),
+                                        float(p_next["lat"]), float(p_next["lon"]))
+                    turn     = turn_vi(b_in, b_out)
+                    new_name = s_map.get(new_sid, "đường không xác định")
+                    inter    = " - ".join(pt["street_names"]) if len(pt["street_names"]) > 1 else ""
+                    if inter:
+                        instructions.append(f"Tại ngã tư {inter}, {turn} vào {new_name}")
+                    else:
+                        instructions.append(f"{turn.capitalize()} vào {new_name}")
+                    current_sid = new_sid
+
+            dist_text = (
+                f"khoảng {total_m} mét" if total_m < 1000
+                else f"khoảng {round(total_m / 1000, 1)} kilômét"
+            )
+            instructions.append(f"Đã đến nơi. Tổng quãng đường {dist_text}")
+            return ". ".join(instructions) + "."
 
         try:
-            # Fetch all positions
             result = supabase.table("Positions").select("*").execute()
             all_positions = result.data or []
-
             if not all_positions:
-                return {"data": [], "label": "Tìm kiếm", "warning": "", "message": "Không có điểm nào trong CSDL."}
+                return {"data": [], "label": "Không có điểm nào trong CSDL", "tts": "", "warning": "", "message": ""}
 
-            # Fetch street names for label resolution
             streets_result = supabase.table("Streets").select("id, name").execute()
             street_map = {s["id"]: s["name"] for s in (streets_result.data or [])}
 
-            data = []
-            for qpt in points:
-                qlat = float(qpt.get("lat"))
-                qlon = float(qpt.get("lon"))
-                best = None
-                best_dist = float("inf")
-                for pos in all_positions:
-                    plat = pos.get("lat")
-                    plon = pos.get("long")
-                    if plat is None or plon is None:
-                        continue
-                    d = euclidean(qlat, qlon, float(plat), float(plon))
-                    if d < best_dist:
-                        best_dist = d
-                        best = pos
-                if best:
-                    street_ids = best.get("streets") or []
-                    street_names = [street_map.get(sid, str(sid)) for sid in street_ids]
-                    # convert degrees distance to approximate metres (1 deg ≈ 111 km)
-                    dist_m = round(best_dist * 111000, 1)
-                    data.append({
-                        "id": best["id"],
-                        "lat": best["lat"],
-                        "lon": best["long"],
-                        "streets": street_ids,
-                        "street_names": street_names,
-                        "distance_m": dist_m,
-                        "query_lat": qlat,
-                        "query_lon": qlon,
-                    })
+            pos_by_id = {}
+            for p in all_positions:
+                if p.get("lat") is not None and p.get("long") is not None:
+                    pos_by_id[p["id"]] = p
+
+            def find_nearest_id(qlat, qlon):
+                best_id, best_d = None, float("inf")
+                for pid, pos in pos_by_id.items():
+                    d = haversine_m(qlat, qlon, float(pos["lat"]), float(pos["long"]))
+                    if d < best_d:
+                        best_d, best_id = d, pid
+                return best_id, best_d
+
+            def make_result_point(pos):
+                street_ids = pos.get("streets") or []
+                return {
+                    "id": pos["id"],
+                    "lat": pos["lat"],
+                    "lon": pos["long"],
+                    "streets": street_ids,
+                    "street_names": [street_map.get(sid, str(sid)) for sid in street_ids],
+                }
+
+            def dist_label(m):
+                return f"~{m}m" if m < 1000 else f"~{round(m / 1000, 1)}km"
+
+            # ── Single-point mode: return nearest ────────────────────────────
+            if len(points) < 2:
+                qlat, qlon = float(points[0]["lat"]), float(points[0]["lon"])
+                nid, dist_m = find_nearest_id(qlat, qlon)
+                if nid is None:
+                    return {"data": [], "label": "Không tìm thấy", "tts": "", "warning": "", "message": ""}
+                pt    = make_result_point(pos_by_id[nid])
+                sname = pt["street_names"][0] if pt["street_names"] else "vị trí không xác định"
+                return {
+                    "data": [pt],
+                    "label": f"Điểm gần nhất: {sname} ({dist_label(round(dist_m))})",
+                    "tts": f"Vị trí gần nhất nằm trên {sname}, cách bạn khoảng {round(dist_m)} mét.",
+                    "warning": "",
+                    "message": f"Khoảng cách: ~{round(dist_m)}m",
+                }
+
+            # ── Two-point mode: shortest path via Dijkstra ───────────────────
+            q1, q2 = points[0], points[1]
+            start_id, d_start = find_nearest_id(float(q1["lat"]), float(q1["lon"]))
+            end_id,   d_end   = find_nearest_id(float(q2["lat"]), float(q2["lon"]))
+
+            if start_id is None or end_id is None:
+                return {"data": [], "label": "Không tìm thấy", "tts": "", "warning": "Không có điểm nào gần query", "message": ""}
+
+            if start_id == end_id:
+                pt    = make_result_point(pos_by_id[start_id])
+                sname = pt["street_names"][0] if pt["street_names"] else "vị trí này"
+                return {
+                    "data": [pt],
+                    "label": f"Điểm xuất phát và đích trùng nhau tại {sname}",
+                    "tts": f"Điểm xuất phát và điểm đích đều nằm tại {sname}.",
+                    "warning": "",
+                    "message": "",
+                }
+
+            # Build adjacency: positions adjacent if they share a street
+            street_to_pids: dict = {}
+            for pid, pos in pos_by_id.items():
+                for sid in (pos.get("streets") or []):
+                    street_to_pids.setdefault(sid, set()).add(pid)
+
+            adjacency: dict = {pid: {} for pid in pos_by_id}
+            for sid, pids in street_to_pids.items():
+                pid_list = list(pids)
+                for i, pid1 in enumerate(pid_list):
+                    p1 = pos_by_id[pid1]
+                    for pid2 in pid_list[i + 1:]:
+                        p2 = pos_by_id[pid2]
+                        d = haversine_m(float(p1["lat"]), float(p1["long"]),
+                                        float(p2["lat"]), float(p2["long"]))
+                        if pid2 not in adjacency[pid1] or adjacency[pid1][pid2] > d:
+                            adjacency[pid1][pid2] = d
+                            adjacency[pid2][pid1] = d
+
+            # Dijkstra
+            dist  = {pid: float("inf") for pid in pos_by_id}
+            prev  = {pid: None         for pid in pos_by_id}
+            dist[start_id] = 0
+            heap = [(0.0, start_id)]
+
+            while heap:
+                d, u = heapq.heappop(heap)
+                if d > dist[u]:
+                    continue
+                if u == end_id:
+                    break
+                for v, w in adjacency[u].items():
+                    nd = dist[u] + w
+                    if nd < dist[v]:
+                        dist[v] = nd
+                        prev[v] = u
+                        heapq.heappush(heap, (nd, v))
+
+            if dist[end_id] == float("inf"):
+                return {
+                    "data": [],
+                    "label": "Không tìm được đường",
+                    "tts": "Không tìm được đường đi giữa hai điểm này.",
+                    "warning": "Hai điểm không có đường nối trong đồ thị",
+                    "message": "",
+                }
+
+            # Reconstruct path
+            path_ids = []
+            cur = end_id
+            while cur is not None:
+                path_ids.append(cur)
+                cur = prev[cur]
+            path_ids.reverse()
+
+            total_m = round(dist[end_id])
+            data    = [make_result_point(pos_by_id[pid]) for pid in path_ids]
+
+            start_name = data[0]["street_names"][0]  if data[0]["street_names"]  else "?"
+            end_name   = data[-1]["street_names"][0] if data[-1]["street_names"] else "?"
+            label = f"Từ {start_name} đến {end_name}, {dist_label(total_m)}"
+            tts   = build_tts(data, pos_by_id, street_map, total_m)
 
             return {
                 "data": data,
-                "label": f"{len(data)} điểm gần nhất",
+                "label": label,
+                "tts": tts,
+                "tts_url": "",
                 "warning": "",
-                "message": ""
+                "message": f"Tổng: {dist_label(total_m)}  |  Snap start: ~{round(d_start)}m  |  Snap end: ~{round(d_end)}m",
             }
+
         except Exception as e:
             raise Exception(f"Search nearest failed: {str(e)}")
 

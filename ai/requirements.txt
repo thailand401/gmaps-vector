@@ -1,0 +1,4 @@
+vieneu
+fastapi
+uvicorn[standard]
+python-multipart

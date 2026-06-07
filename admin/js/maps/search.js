@@ -70,23 +70,118 @@ async function searchPoints({ lat1, lon1, lat2, lon2 }) {
 function renderSearchResult(container, resp) {
     let html = '';
     if (resp.label)   html += `<div class="sr-label">${resp.label}</div>`;
-    if (resp.warning) html += `<div class="sr-warning">⚠ ${resp.warning}</div>`;
+    if (resp.tts)     html += `<div class="sr-tts">${resp.tts}</div>`;
+    if (resp.warning) html += `<div class="sr-warning">&#9888; ${resp.warning}</div>`;
     if (resp.message) html += `<div class="sr-message">${resp.message}</div>`;
+
+    // Auto-play TTS audio if tts text provided — call TTS service async, play when ready
+    if (resp.tts) {
+        const existing = document.getElementById('tts-audio-player');
+        if (existing) existing.remove();
+        fetch('http://localhost:4020/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: resp.tts })
+        })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+            if (!data || !data.url) return;
+            const audio = document.createElement('audio');
+            audio.id  = 'tts-audio-player';
+            audio.src = data.url;
+            document.body.appendChild(audio);
+            audio.play().catch(() => {});
+        })
+        .catch(() => {});
+    }
 
     if (Array.isArray(resp.data) && resp.data.length > 0) {
         resp.data.forEach((pt, i) => {
             const streets = Array.isArray(pt.street_names) && pt.street_names.length
                 ? pt.street_names.join(' - ')
-                : (Array.isArray(pt.streets) ? pt.streets.join(', ') : '-');
-            const dist = pt.distance_m != null ? ` <span style="color:#888">~${pt.distance_m}m</span>` : '';
-            const query = pt.query_lat != null
-                ? `<span style="color:#aaa;font-size:10px"> (query: ${pt.query_lat.toFixed(6)}, ${pt.query_lon.toFixed(6)})</span>`
-                : '';
-            html += `<div class="sr-point"><b>P${i + 1}</b> #${pt.id ?? '-'} ${streets}${dist}${query}<br><span style="color:#555">${pt.lat}, ${pt.lon}</span></div>`;
+                : '-';
+            const isFirst = i === 0, isLast = i === resp.data.length - 1;
+            const marker = isFirst ? '&#9679; Start' : isLast ? '&#9679; End' : `&#9675; ${i + 1}`;
+            html += `<div class="sr-point">
+                <span class="sr-step">${marker}</span>
+                <span class="sr-streets">${streets}</span>
+                <span class="sr-coords">${Number(pt.lat).toFixed(6)}, ${Number(pt.lon).toFixed(6)}</span>
+            </div>`;
         });
+        drawSearchPath(resp.data);
     } else {
-        html += '<div class="sr-message">Không tìm thấy điểm nào.</div>';
+        html += '<div class="sr-message">Kh&#244;ng t&#236;m th&#7845;y &#273;i&#7875;m n&#224;o.</div>';
+        clearSearchPath();
     }
 
     container.innerHTML = html;
 }
+
+// ── Search path SVG overlay ───────────────────────────────────────────────────
+
+function _getOrCreateSearchSvg() {
+    let svg = document.getElementById('search-path-svg');
+    if (!svg) {
+        svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.id = 'search-path-svg';
+        svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:50;overflow:visible;';
+        const coords = document.querySelector('.coordinates');
+        if (coords) coords.appendChild(svg);
+    }
+    return svg;
+}
+
+function clearSearchPath() {
+    const svg = document.getElementById('search-path-svg');
+    if (svg) svg.innerHTML = '';
+}
+
+function drawSearchPath(pathPts) {
+    const svg = _getOrCreateSearchSvg();
+    svg.innerHTML = '';
+    if (!pathPts || pathPts.length < 2) return;
+
+    const mapSize = parseInt(document.getElementById('sSize')?.value) || 400;
+    const sizePer = mapSize / 2400;
+    const mapContainer = document.querySelector('.container');
+    const sl = mapContainer ? mapContainer.scrollLeft : 0;
+    const st = mapContainer ? mapContainer.scrollTop  : 0;
+
+    const pts = pathPts.map(p => {
+        const px = latLonToPixel(parseFloat(p.lat), parseFloat(p.lon), sizePer);
+        return `${px.left - sl},${px.top - st}`;
+    }).join(' ');
+
+    // Path line
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    line.setAttribute('points', pts);
+    line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', '#FF5722');
+    line.setAttribute('stroke-width', '3');
+    line.setAttribute('stroke-linecap', 'round');
+    line.setAttribute('stroke-linejoin', 'round');
+    line.setAttribute('opacity', '0.85');
+    svg.appendChild(line);
+
+    // Start & end markers
+    const first = pathPts[0],  last = pathPts[pathPts.length - 1];
+    [[first, '#4CAF50'], [last, '#F44336']].forEach(([p, color]) => {
+        const px = latLonToPixel(parseFloat(p.lat), parseFloat(p.lon), sizePer);
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('cx', px.left - sl);
+        c.setAttribute('cy', px.top  - st);
+        c.setAttribute('r', '6');
+        c.setAttribute('fill', color);
+        c.setAttribute('stroke', '#fff');
+        c.setAttribute('stroke-width', '2');
+        svg.appendChild(c);
+    });
+
+    // Redraw on scroll so path stays aligned
+    if (mapContainer && !mapContainer._searchScrollBound) {
+        mapContainer._searchScrollBound = true;
+        mapContainer.addEventListener('scroll', () => drawSearchPath(_lastSearchPath));
+    }
+    window._lastSearchPath = pathPts;
+}
+

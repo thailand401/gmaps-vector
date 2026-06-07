@@ -132,7 +132,7 @@ class Position(BaseModel):
     y: Optional[float] = None
     streets: Optional[list] = None
     ban: Optional[list] = None
-    speed: Optional[int] = None
+    speed: Optional[dict] = None
     park: Optional[bool] = None
     lane: Optional[int] = None
     tool: Optional[int] = None
@@ -148,7 +148,7 @@ class PositionCreate(BaseModel):
     x: float
     y: float
     ban: Optional[list] = None
-    speed: Optional[int] = None
+    speed: Optional[dict] = None
     park: Optional[bool] = None
     lane: Optional[int] = None
     tool: Optional[int] = None
@@ -160,7 +160,7 @@ class PositionUpdate(BaseModel):
     x: Optional[float] = None
     y: Optional[float] = None
     ban: Optional[list] = None
-    speed: Optional[int] = None
+    speed: Optional[dict] = None
     park: Optional[bool] = None
     lane: Optional[int] = None
     tool: Optional[int] = None
