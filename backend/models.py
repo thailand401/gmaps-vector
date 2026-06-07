@@ -92,6 +92,7 @@ class Street(BaseModel):
     type: Optional[str] = None
     district_id: Optional[int] = None
     city_id: Optional[int] = None
+    positions: Optional[list] = None
     created_at: Optional[str] = None
 
     class Config:
@@ -129,6 +130,7 @@ class Position(BaseModel):
     street_id: Optional[int] = None
     x: Optional[float] = None
     y: Optional[float] = None
+    streets: Optional[list] = None
     ban: Optional[list] = None
     speed: Optional[int] = None
     park: Optional[bool] = None

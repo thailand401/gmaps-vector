@@ -175,6 +175,19 @@ h1 {
     flex: 1;
 }
 
+/* Save button */
+.save-btn {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 4px;
+    background: linear-gradient(180deg,#2b7cff,#1a5fd6);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(43,124,255,0.25);
+}
+.save-btn:hover { filter: brightness(1.03); transform: translateY(-1px); }
+
 .toolbar input {
     background-color: white;
 }

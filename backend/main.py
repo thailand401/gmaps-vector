@@ -4,7 +4,7 @@ import os
 # Add backend directory to path to import modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional, List
 import logging
@@ -391,6 +391,19 @@ async def create_position(position: PositionCreate):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/positions/bulk")
+async def create_positions_bulk(payload: List[dict] = Body(...)):
+    """Accepts an array of streets with points and creates Positions and updates Streets.positions.
+    Expected payload: [{ id: street_id, points: [{lat: number, lon: number}, ...] }, ...]
+    """
+    try:
+        created = await MapsService.create_positions_bulk(payload)
+        return {"created": created}
+    except Exception as e:
+        logger.error(f"Error creating positions bulk: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.put("/api/positions/{position_id}", response_model=Position)
 async def update_position(position_id: int, position: PositionUpdate):
     try:
@@ -406,5 +419,18 @@ async def delete_position(position_id: int):
         return {"message": "Position deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/positions/{position_id}/cascade")
+async def delete_position_cascade(position_id: int):
+    try:
+        await MapsService.delete_position_cascade(position_id)
+        return {"message": "Position deleted and Streets updated"}
+    except Exception as e:
+        logger.error(f"Error deleting position cascade: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=4000, log_level="info")

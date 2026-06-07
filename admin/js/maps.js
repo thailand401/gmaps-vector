@@ -131,7 +131,7 @@ window.addEventListener('load', async () => {
     sizePer  = nSize/2400;
 
     setTimeout(() => {
-      //return;
+      return;
       allPointrs.forEach(({ name, latitude, longitude }) => {
           const pos = latLonToPixel(latitude, longitude, sizePer);
           const { pointr } = createPointr(pos.left, pos.top, name, latitude, longitude);

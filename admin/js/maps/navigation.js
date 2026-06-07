@@ -224,6 +224,14 @@ async function initFilterListeners() {
     document.getElementById('Streets').addEventListener('change', (e) => {
         if (e.target.value === '-3') { showCreateStreetModal(); }
     });
+    // Show modal listing streets and their newly created pointrs
+    const saveBtn = document.getElementById('saveAll');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (typeof showSaveAllModal === 'function') showSaveAllModal();
+        });
+    }
     document.getElementById('modal').addEventListener('click', (e) => {
         if (e.target === document.getElementById('modal')) closeModal();
     });

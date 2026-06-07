@@ -398,6 +398,118 @@ function showSetBoolModal(pointrId, key, title) {
     });
 }
 
+// ==================== SAVE ALL / SUMMARY MODAL ====================
+
+function showSaveAllModal() {
+    const groups = {};
+    // Prefer using pointrData entries and their `streets` array.
+    pointrData.forEach((data, id) => {
+        const streetsArr = Array.isArray(data.streets) && data.streets.length ? data.streets : null;
+        if (streetsArr) {
+            streetsArr.forEach(sid => {
+                if (!sid) return;
+                // only include if street exists in allStreetsData
+                if (typeof allStreetsData !== 'undefined' && Array.isArray(allStreetsData)) {
+                    const exists = allStreetsData.find(s => s.id === sid);
+                    if (!exists) return; // skip non-existent street
+                }
+                if (!groups[sid]) groups[sid] = [];
+                const tooltip = data && data.element ? data.element.querySelector('.pointr-tooltip') : null;
+                const name = tooltip ? tooltip.textContent : (data && data.lat ? `${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}` : `Pointr ${data.id}`);
+                groups[sid].push({ id: data.id, name, lat: data.lat, lon: data.lon });
+            });
+        } else {
+            // fallback to streetPointsList entry (older code path)
+            const sp = streetPointsList.find(p => p.id === data.id);
+            if (sp && sp.streetId) {
+                const sid = sp.streetId;
+                if (typeof allStreetsData !== 'undefined' && Array.isArray(allStreetsData)) {
+                    const exists = allStreetsData.find(s => s.id === sid);
+                    if (!exists) return;
+                }
+                if (!groups[sid]) groups[sid] = [];
+                const tooltip = data && data.element ? data.element.querySelector('.pointr-tooltip') : null;
+                const name = tooltip ? tooltip.textContent : (data && data.lat ? `${data.lat.toFixed(6)}, ${data.lon.toFixed(6)}` : `Pointr ${data.id}`);
+                groups[sid].push({ id: data.id, name });
+            }
+        }
+    });
+
+    const streetIds = Object.keys(groups);
+    if (streetIds.length === 0) {
+        openModal(`
+            <div class="modal-content">
+                <h2>Roads with New Pointrs</h2>
+                <div class="modal-context">Không có Pointr nào được tạo cho các đường (hoặc các đường không tồn tại).</div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-cancel" onclick="closeModal()">Đóng</button>
+                </div>
+            </div>
+        `);
+        return;
+    }
+
+    let html = `<div class="modal-content"><h2>Roads with New Pointrs</h2><div class="modal-context">Danh sách các đường và Pointr mới:</div>`;
+    streetIds.forEach(sid => {
+        const sidNum = parseInt(sid);
+        const street = (typeof allStreetsData !== 'undefined' && allStreetsData) ? allStreetsData.find(s => s.id === sidNum) : null;
+        const streetName = street ? street.name : `Street ${sid}`;
+        html += `<div style="margin:8px 0;font-size:12px;"><strong>__${streetName}</strong><ul style="margin:6px 0 0 18px;">`;
+                groups[sid].forEach(pt => {
+            html += `<li>|_____${escapeHtml(pt.name)} <span style="color:#777;font-size:11px;margin-left:8px">(#${pt.id})</span></li>`;
+        });
+        html += `</ul></div>`;
+    });
+    html += `<div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal()">Đóng</button><button type="button" class="btn-submit" id="confirmSaveAll">Confirm</button></div></div>`;
+
+    openModal(html);
+
+    // Attach Confirm handler
+    document.getElementById('confirmSaveAll').addEventListener('click', async (e) => {
+        e.preventDefault();
+        // Build payload: [{ id: streetId, points: [{lat, lon}, ...] }, ...]
+        const payload = [];
+        streetIds.forEach(sid => {
+            const pts = groups[sid]
+                .map(p => ({ lat: p.lat, lon: p.lon }))
+                .filter(p => typeof p.lat === 'number' && !isNaN(p.lat) && typeof p.lon === 'number' && !isNaN(p.lon));
+            if (pts.length) payload.push({ id: parseInt(sid), points: pts });
+        });
+        console.log('positions bulk payload:', JSON.stringify(payload));
+        if (payload.length === 0) {
+            alert('No valid points to save.');
+            return;
+        }
+
+        try {
+            const resp = await fetch('http://localhost:4000/api/positions/bulk', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!resp.ok) {
+                const txt = await resp.text();
+                throw new Error(txt || 'Server error');
+            }
+            const data = await resp.json();
+            closeModal();
+            alert('Saved positions successfully.');
+        } catch (err) {
+            console.error(err);
+            document.getElementById('modalError').textContent = 'Lỗi khi lưu: ' + (err.message || err);
+        }
+    });
+}
+
+function escapeHtml(text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // ==================== POINTR MOVEMENT ====================
 
 function movePointr(direction) {
