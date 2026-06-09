@@ -6,6 +6,7 @@ from models import (
     Position, PositionCreate, PositionUpdate,
 )
 from typing import List, Optional
+import unicodedata
 
 
 def _next_id(table: str, id_col: str = "id") -> int:
@@ -139,6 +140,88 @@ class MapsService:
     @staticmethod
     async def create_street(data: StreetCreate) -> Street:
         try:
+            # Normalize helper (remove diacritics, lower, collapse whitespace)
+            import re
+
+            def _normalize(s: str) -> str:
+                if not s:
+                    return ''
+                s = str(s).strip().lower()
+                # NFKD to decompose accents, then remove combining marks
+                s = unicodedata.normalize('NFKD', s)
+                s = ''.join(ch for ch in s if not unicodedata.combining(ch))
+                # remove punctuation, keep letters/numbers and spaces
+                s = re.sub(r'[^0-9a-z\s]', ' ', s)
+                s = ' '.join(s.split())
+                return s
+
+            def _levenshtein(a: str, b: str) -> int:
+                # simple iterative DP
+                if a == b:
+                    return 0
+                if len(a) == 0:
+                    return len(b)
+                if len(b) == 0:
+                    return len(a)
+                prev = list(range(len(b) + 1))
+                for i, ca in enumerate(a, start=1):
+                    curr = [i]
+                    for j, cb in enumerate(b, start=1):
+                        insert_cost = curr[j-1] + 1
+                        delete_cost = prev[j] + 1
+                        replace_cost = prev[j-1] + (0 if ca == cb else 1)
+                        curr.append(min(insert_cost, delete_cost, replace_cost))
+                    prev = curr
+                return prev[-1]
+
+            name_norm = _normalize(data.name)
+            city_id = data.city_id
+            district_id = data.district_id
+
+            # Fetch candidate existing streets in same district or city
+            query = supabase.table("Streets").select("id, name, district_id, city_id").order("name")
+            if district_id is not None:
+                query = query.eq("district_id", district_id)
+            elif city_id is not None:
+                query = query.eq("city_id", city_id)
+            existing_res = query.execute()
+            existing_list = existing_res.data or []
+            for item in existing_list:
+                existing_name = item.get('name') or ''
+                en_norm = _normalize(existing_name)
+                # exact or containment
+                if en_norm == name_norm or (name_norm and en_norm and (name_norm in en_norm or en_norm in name_norm)):
+                    raise Exception(f"Similar street exists: {existing_name} (id={item.get('id')})")
+                # small edit distance -> likely duplicate; threshold scales with length
+                max_dist = max(2, int(max(len(en_norm), len(name_norm)) * 0.2))
+                dist = _levenshtein(en_norm, name_norm)
+                # debug log
+                try:
+                    import logging
+                    logging.getLogger(__name__).info(f"create_street: compare '{name_norm}' vs '{en_norm}' -> dist={dist} threshold={max_dist}")
+                except Exception:
+                    pass
+                if dist <= max_dist:
+                    raise Exception(f"Similar street exists: {existing_name} (id={item.get('id')})")
+
+            # Also perform a global fuzzy search to catch similar names in other districts/cities
+            try:
+                global_results = await MapsService.search_streets_by_text(data.name, district_id=None, city_id=None, limit=10)
+                # Accept if any match has a low score (<= 0.15)
+                for r in (global_results or []):
+                    if float(r.get('score', 1.0)) <= 0.15:
+                        raise Exception(f"Similar street exists elsewhere: {r.get('name')} (id={r.get('id')})")
+            except Exception as e:
+                # If search_streets_by_text raised an exception because of DB, re-raise as generic
+                if str(e).startswith('Failed to create street'):
+                    raise
+                # If we raised above due to similarity, pass it up
+                if 'Similar street exists' in str(e) or 'Similar street exists elsewhere' in str(e):
+                    raise
+                # otherwise ignore search errors and proceed with insert
+                pass
+
+            # No similar found -> proceed to insert
             next_id = _next_id("Streets")
             payload = {"id": next_id, "name": data.name, "district_id": data.district_id, "city_id": data.city_id}
             if data.type:
@@ -172,6 +255,81 @@ class MapsService:
             return True
         except Exception as e:
             raise Exception(f"Failed to delete street: {str(e)}")
+
+    @staticmethod
+    async def search_streets_by_text(text: str, district_id: Optional[int] = None, city_id: Optional[int] = None, limit: int = 10) -> list:
+        """Search streets by text with normalization and fuzzy matching.
+        Returns list of dicts: {id, name, type, district_id, city_id, score}
+        Lower score == better match.
+        """
+        try:
+            if not text or not str(text).strip():
+                return []
+            import re
+            def _normalize(s: str) -> str:
+                s = str(s or '').strip().lower()
+                s = unicodedata.normalize('NFKD', s)
+                s = ''.join(ch for ch in s if not unicodedata.combining(ch))
+                s = re.sub(r'[^0-9a-z\s]', ' ', s)
+                s = ' '.join(s.split())
+                return s
+
+            def _lev(a: str, b: str) -> int:
+                if a == b:
+                    return 0
+                if len(a) == 0:
+                    return len(b)
+                if len(b) == 0:
+                    return len(a)
+                prev = list(range(len(b) + 1))
+                for i, ca in enumerate(a, start=1):
+                    curr = [i]
+                    for j, cb in enumerate(b, start=1):
+                        insert_cost = curr[j-1] + 1
+                        delete_cost = prev[j] + 1
+                        replace_cost = prev[j-1] + (0 if ca == cb else 1)
+                        curr.append(min(insert_cost, delete_cost, replace_cost))
+                    prev = curr
+                return prev[-1]
+
+            q = _normalize(text)
+            # Fetch candidate streets filtered by district or city
+            query = supabase.table("Streets").select("id, name, type, district_id, city_id").order("name")
+            if district_id is not None:
+                query = query.eq("district_id", district_id)
+            elif city_id is not None:
+                query = query.eq("city_id", city_id)
+            res = query.execute()
+            candidates = res.data or []
+
+            scored = []
+            for item in candidates:
+                name = item.get('name') or ''
+                norm = _normalize(name)
+                score = None
+                if norm == q:
+                    score = 0.0
+                elif q in norm or norm in q:
+                    score = 0.1
+                else:
+                    dist = _lev(q, norm)
+                    max_len = max(len(q), len(norm), 1)
+                    # normalized distance
+                    score = dist / max_len
+                scored.append({
+                    'id': item.get('id'),
+                    'name': name,
+                    'type': item.get('type'),
+                    'district_id': item.get('district_id'),
+                    'city_id': item.get('city_id'),
+                    'score': round(float(score), 3)
+                })
+
+            # sort by score asc, then by name
+            scored.sort(key=lambda x: (x['score'], x['name']))
+            return scored[:limit]
+        except Exception as e:
+            raise Exception(f"Failed to search streets: {str(e)}")
 
     # ==================== POSITIONS ====================
 

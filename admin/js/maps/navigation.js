@@ -106,7 +106,7 @@ function showCreateDistrictModal() {
     });
 }
 
-function showCreateStreetModal() {
+function showCreateStreetModal(onCreated) {
     const cityId = document.getElementById('Cities').value;
     const districtId = document.getElementById('Districts').value;
     if (!cityId || cityId === 'all' || parseInt(cityId) < 0) {
@@ -150,6 +150,9 @@ function showCreateStreetModal() {
             closeModal();
             await loadStreets(districtId, cityId);
             document.getElementById('Streets').value = street.id;
+            if (typeof onCreated === 'function') {
+                try { onCreated(street.id); } catch (_) {}
+            }
         } catch (err) {
             document.getElementById('modalError').textContent = err.message;
         }

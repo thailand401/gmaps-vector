@@ -649,7 +649,45 @@ function showSaveAllModal() {
                 const txt = await resp.text();
                 throw new Error(txt || 'Server error');
             }
-            await resp.json();
+            const result = await resp.json();
+            // result.created is expected to be an array of created/updated DB rows
+            const created = result.created || result;
+            // Map returned DB rows back into local pointrData and move them into pointrReload
+            if (Array.isArray(created)) {
+                created.forEach(pos => {
+                    // pos: DB row with id, lat, long, streets
+                    const lat = parseFloat(pos.lat ?? pos.y ?? pos.lat);
+                    const lon = parseFloat(pos.long ?? pos.x ?? pos.long);
+                    // find a matching local pointr by lat/lon (exact match) or by streets
+                    for (const [pid, data] of pointrData.entries()) {
+                        const dlat = Number(data.lat);
+                        const dlon = Number(data.lon);
+                        const matchLatLon = (!isNaN(dlat) && !isNaN(dlon) && Math.abs(dlat - lat) < 1e-9 && Math.abs(dlon - lon) < 1e-9);
+                        if (matchLatLon) {
+                            data.dbId = pos.id;
+                            data.streets = Array.isArray(pos.streets) ? pos.streets : (data.streets || []);
+                            // move to reload map
+                            pointrReload.set(pid, data);
+                            pointrData.delete(pid);
+                            if (data.element) data.element.classList.add('pointr-reload');
+                            renderedDbIds.add(pos.id);
+                            // update streetPointsList
+                            const sp = streetPointsList.find(p => p.id === pid);
+                            if (sp) {
+                                sp.streetId = data.streets && data.streets[0] ? data.streets[0] : sp.streetId;
+                                sp.ban = pos.ban ?? sp.ban;
+                                sp.speed = pos.speed ?? sp.speed;
+                                sp.park = pos.park ?? sp.park;
+                                sp.lane = pos.lane ?? sp.lane;
+                                sp.toll = pos.tool ?? sp.toll;
+                                sp.flooding = pos.flooding ?? sp.flooding;
+                            }
+                            break;
+                        }
+                    }
+                });
+            }
+
             closeModal();
             alert('Saved positions successfully.');
         } catch (err) {
@@ -764,6 +802,39 @@ function handleGalleryClick(e) {
     const sizePer = parseInt(document.getElementById('sSize').value) / 2400;
     const { lat, lon } = pixelToLatLon(clickX, clickY, sizePer);
     const streetSelect = document.getElementById('Streets');
+    const streetValue = streetSelect.value;
+    // If Streets is 'all' but a City and District are selected, prompt to create a new street
+    const cityVal = document.getElementById('Cities').value;
+    const districtVal = document.getElementById('Districts').value;
+    if (streetValue === 'all' && cityVal && cityVal !== 'all' && parseInt(cityVal) > 0 && districtVal && districtVal !== 'all' && parseInt(districtVal) > 0) {
+        // Create a temporary pointr now so user sees the marker immediately.
+        const { pointr, pointrId } = createPointr(clickX, clickY, 'Tạm', lat, lon);
+        // mark as temporary so UI can indicate it's pending street assignment
+        pointr.classList.add('pointr-temp');
+        document.querySelector('.coordinates').appendChild(pointr);
+        refreshStreetPath();
+
+        // Open create-street modal; when new street is created, assign it to this pointr
+        showCreateStreetModal((newStreetId) => {
+            try { document.getElementById('Streets').value = newStreetId; } catch (e) {}
+            const streetName = document.getElementById('Streets').selectedOptions[0]?.text || 'New Street';
+            const data = pointrData.get(pointrId);
+            if (data) {
+                data.streets = [parseInt(newStreetId)];
+                // update tooltip
+                const tooltip = data.element ? data.element.querySelector('.pointr-tooltip') : null;
+                if (tooltip) tooltip.textContent = streetName;
+            }
+            // update streetPointsList entry
+            const sp = streetPointsList.find(p => p.id === pointrId);
+            if (sp) sp.streetId = parseInt(newStreetId);
+            // remove temp marker class
+            pointr.classList.remove('pointr-temp');
+            refreshStreetPath();
+        });
+        return;
+    }
+
     const streetName = streetSelect.options[streetSelect.selectedIndex]?.text || 'Unknown Street';
     const { pointr } = createPointr(clickX, clickY, streetName , lat, lon);
     document.querySelector('.coordinates').appendChild(pointr);
