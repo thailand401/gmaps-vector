@@ -151,6 +151,13 @@ h1 {
     height: 14px;
 }
 
+.pointr.selected {
+    background-color: #9c27b0;
+    border-color: #6a0080;
+    width: 14px;
+    height: 14px;
+}
+
 .pointr.pointr-reload {
     background-color: #ff9800;
     border-color: #e65100;

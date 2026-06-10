@@ -5,6 +5,7 @@ const pointrData = new Map();   // new/edited pointrs (to be saved/updated)
 const pointrReload = new Map(); // pointrs loaded from DB (read-only until edited)
 const renderedDbIds = new Set(); // tracks DB position ids already rendered — prevents duplicate render
 let activePointrId = null;
+const selectedPointrIds = new Set(); // multi-select via shift+click
 let isDragging = false;
 let activeStreetPathId = null; // street currently being visualised with a path
 
@@ -250,6 +251,19 @@ function createPointr(clientX, clientY, title = '', lat = null, lon = null) {
     pointr.addEventListener('click', (e) => {
         e.stopPropagation();
         const editor = document.querySelector('#editor');
+        if (e.shiftKey) {
+            // Toggle multi-select; no submenu
+            if (selectedPointrIds.has(pointrId)) {
+                selectedPointrIds.delete(pointrId);
+            } else {
+                selectedPointrIds.add(pointrId);
+            }
+            closePointrSubmenu();
+            updateActivePointrVisual();
+            return;
+        }
+        // Regular click — clear multi-selection
+        selectedPointrIds.clear();
         if (editor.value === 'move') {
             activePointrId = pointrId;
             updateActivePointrVisual();
@@ -261,7 +275,14 @@ function createPointr(clientX, clientY, title = '', lat = null, lon = null) {
 }
 
 function updateActivePointrVisual() {
-    document.querySelectorAll('.pointr').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.pointr').forEach(p => {
+        p.classList.remove('active');
+        p.classList.remove('selected');
+    });
+    selectedPointrIds.forEach(pid => {
+        const el = document.getElementById(`pointr-${pid}`);
+        if (el) el.classList.add('selected');
+    });
     if (activePointrId) {
         const el = document.getElementById(`pointr-${activePointrId}`);
         if (el) el.classList.add('active');
@@ -342,6 +363,7 @@ function deletePointr(pointrId) {
         pointrReload.delete(pointrId);
     }
     removeFromStreetPoints(pointrId);
+    selectedPointrIds.delete(pointrId);
     if (activePointrId === pointrId) { activePointrId = null; updateActivePointrVisual(); }
     refreshStreetPath();
 }
@@ -652,41 +674,52 @@ function showSaveAllModal() {
             const result = await resp.json();
             // result.created is expected to be an array of created/updated DB rows
             const created = result.created || result;
-            // Map returned DB rows back into local pointrData and move them into pointrReload
+
+            // Build lat/lon → server row lookup for dbId assignment
+            const latLonToServer = new Map();
             if (Array.isArray(created)) {
                 created.forEach(pos => {
-                    // pos: DB row with id, lat, long, streets
-                    const lat = parseFloat(pos.lat ?? pos.y ?? pos.lat);
-                    const lon = parseFloat(pos.long ?? pos.x ?? pos.long);
-                    // find a matching local pointr by lat/lon (exact match) or by streets
-                    for (const [pid, data] of pointrData.entries()) {
-                        const dlat = Number(data.lat);
-                        const dlon = Number(data.lon);
-                        const matchLatLon = (!isNaN(dlat) && !isNaN(dlon) && Math.abs(dlat - lat) < 1e-9 && Math.abs(dlon - lon) < 1e-9);
-                        if (matchLatLon) {
-                            data.dbId = pos.id;
-                            data.streets = Array.isArray(pos.streets) ? pos.streets : (data.streets || []);
-                            // move to reload map
-                            pointrReload.set(pid, data);
-                            pointrData.delete(pid);
-                            if (data.element) data.element.classList.add('pointr-reload');
-                            renderedDbIds.add(pos.id);
-                            // update streetPointsList
-                            const sp = streetPointsList.find(p => p.id === pid);
-                            if (sp) {
-                                sp.streetId = data.streets && data.streets[0] ? data.streets[0] : sp.streetId;
-                                sp.ban = pos.ban ?? sp.ban;
-                                sp.speed = pos.speed ?? sp.speed;
-                                sp.park = pos.park ?? sp.park;
-                                sp.lane = pos.lane ?? sp.lane;
-                                sp.toll = pos.tool ?? sp.toll;
-                                sp.flooding = pos.flooding ?? sp.flooding;
-                            }
-                            break;
-                        }
+                    const lat = parseFloat(pos.lat ?? pos.y);
+                    const lon = parseFloat(pos.long ?? pos.x);
+                    if (!isNaN(lat) && !isNaN(lon)) {
+                        latLonToServer.set(`${lat.toFixed(9)},${lon.toFixed(9)}`, pos);
                     }
                 });
             }
+
+            // Move ALL saved pointrs from pointrData → pointrReload using pointrsList
+            // (pointrsList was captured at modal-open, so its ids are reliable even if server
+            //  response lat/lon precision differs)
+            pointrsList.forEach(pt => {
+                const data = pointrData.get(pt.id);
+                if (!data) return; // already moved or deleted
+
+                // Try to update dbId / metadata from server response via lat/lon key
+                const key = `${Number(pt.lat).toFixed(9)},${Number(pt.lon).toFixed(9)}`;
+                const pos = latLonToServer.get(key);
+                if (pos) {
+                    data.dbId = pos.id;
+                    data.streets = Array.isArray(pos.streets) ? pos.streets : (data.streets || []);
+                    const sp = streetPointsList.find(p => p.id === pt.id);
+                    if (sp) {
+                        sp.streetId = data.streets[0] ?? sp.streetId;
+                        sp.ban      = pos.ban      ?? sp.ban;
+                        sp.speed    = pos.speed    ?? sp.speed;
+                        sp.park     = pos.park     ?? sp.park;
+                        sp.lane     = pos.lane     ?? sp.lane;
+                        sp.toll     = pos.tool     ?? sp.toll;
+                        sp.flooding = pos.flooding ?? sp.flooding;
+                    }
+                } else if (pt.dbId) {
+                    // Was an update — keep existing dbId
+                    data.dbId = pt.dbId;
+                }
+
+                if (data.dbId) renderedDbIds.add(data.dbId);
+                pointrReload.set(pt.id, data);
+                pointrData.delete(pt.id);
+                if (data.element) data.element.classList.add('pointr-reload');
+            });
 
             closeModal();
             alert('Saved positions successfully.');
@@ -866,6 +899,12 @@ function initKeyboardListener() {
                 movePointr(e.key);
                 e.preventDefault();
             }
+        }
+        if (e.key === 'Delete' && selectedPointrIds.size > 0) {
+            const toDelete = [...selectedPointrIds];
+            selectedPointrIds.clear();
+            toDelete.forEach(pid => deletePointr(pid));
+            e.preventDefault();
         }
     }, true);
 }
