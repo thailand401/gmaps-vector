@@ -1,5 +1,5 @@
 // API configuration
-const API_BASE_URL = 'http://localhost:4000/api';
+const API_BASE_URL = '/api';
 
 class ApiClient {
     constructor(baseUrl = API_BASE_URL) {
@@ -8,9 +8,11 @@ class ApiClient {
 
     async request(endpoint, options = {}) {
         const url = `${this.baseUrl}${endpoint}`;
+        const apiKey = sessionStorage.getItem('admin_api_key') || '';
         const config = {
             headers: {
                 'Content-Type': 'application/json',
+                'X-API-Key': apiKey,
                 ...options.headers,
             },
             ...options,

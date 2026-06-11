@@ -6,6 +6,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 from typing import Optional, List
 import logging
 
@@ -33,6 +36,18 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# API Key authentication middleware
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        path = request.url.path
+        if path.startswith('/api/') and path != '/api/auth/verify':
+            api_key = request.headers.get('X-API-Key', '')
+            if api_key != settings.admin_api_key:
+                return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return await call_next(request)
+
+app.add_middleware(APIKeyMiddleware)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +56,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Auth verify endpoint (no key required)
+@app.post("/api/auth/verify")
+async def verify_api_key(body: dict = Body(...)):
+    key = body.get("key", "")
+    return {"valid": key == settings.admin_api_key}
 
 
 # Map images listing
@@ -470,6 +492,11 @@ async def search_nearest(payload: dict = Body(...)):
     except Exception as e:
         logger.error(f"Error searching nearest: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Serve admin static files (must be mounted last, after all API routes)
+_admin_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'admin')
+app.mount("/", StaticFiles(directory=_admin_dir, html=True), name="admin")
 
 
 if __name__ == '__main__':

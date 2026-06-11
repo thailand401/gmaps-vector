@@ -6,6 +6,7 @@ from supabase import create_client, Client
 class Settings(BaseSettings):
     supabase_url: str
     supabase_key: str
+    admin_api_key: str
 
     class Config:
         env_file = "../.env"

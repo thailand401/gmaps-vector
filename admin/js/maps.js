@@ -1,12 +1,13 @@
 // ==================== ENTRY POINT ====================
 
-const apiClient = new ApiClient('http://localhost:4000/api');
+const apiClient = new ApiClient('/api');
 //top-left : 10.947849, 106.532560, 17z bottom-right: 10.629144, 106.828837, 17z
 // Shared state
 let locationsData = [];
 let filteredLocations = [];
 
 window.addEventListener('load', async () => {
+    await window.loadTileCenters(); // load tile centers trước khi render pointr
     await loadLocations();
     enableGalleryDragScroll();
     initGalleryClickListener();
