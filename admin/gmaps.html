@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GMaps Vector</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: 'Segoe UI', Arial, sans-serif; }
+
+    #map { position: fixed; inset: 0; z-index: 0; }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      position: fixed;
+      top: 12px; left: 50%;
+      transform: translateX(-50%);
+      display: flex; gap: 8px; align-items: center;
+      background: #fff;
+      border-radius: 12px;
+      padding: 8px 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.25);
+      z-index: 10;
+      flex-wrap: wrap;
+      max-width: calc(100vw - 24px);
+    }
+    #toolbar select, #toolbar input[type=text] {
+      border: 1px solid #d0d0d0;
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 13px;
+      background: #fafafa;
+      outline: none;
+      cursor: pointer;
+      min-width: 130px;
+    }
+    #toolbar select:focus, #toolbar input[type=text]:focus {
+      border-color: #4285f4;
+      background: #fff;
+    }
+    #searchInput {
+      min-width: 180px;
+    }
+    #toolbar button {
+      border: none;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      background: #4285f4;
+      color: #fff;
+      font-weight: 600;
+      transition: background .15s;
+    }
+    #toolbar button:hover { background: #2a6dd4; }
+    #toolbar button.secondary {
+      background: #f1f3f4; color: #3c4043;
+    }
+    #toolbar button.secondary:hover { background: #e2e4e6; }
+
+    /* ── Counter badge ── */
+    #counter {
+      position: fixed;
+      bottom: 24px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,.65);
+      color: #fff;
+      border-radius: 20px;
+      padding: 4px 16px;
+      font-size: 13px;
+      z-index: 10;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* ── Info panel (marker click) ── */
+    #infoPanel {
+      position: fixed;
+      bottom: 60px; right: 16px;
+      width: 280px;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.25);
+      padding: 16px;
+      z-index: 10;
+      display: none;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    #infoPanel h3 {
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #202124;
+    }
+    #infoPanel .row { display: flex; justify-content: space-between; }
+    #infoPanel .label { color: #777; }
+    #infoPanel .close-btn {
+      position: absolute; top: 10px; right: 12px;
+      cursor: pointer; font-size: 18px; color: #888; line-height: 1;
+      background: none; border: none;
+    }
+    #infoPanel .close-btn:hover { color: #333; }
+
+    /* ── Loading overlay ── */
+    #loading {
+      position: fixed; inset: 0;
+      background: rgba(255,255,255,.7);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 20;
+      font-size: 16px; color: #555;
+    }
+    #loading.hidden { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- Map canvas -->
+<div id="map"></div>
+
+<!-- Loading overlay -->
+<div id="loading">Đang tải bản đồ…</div>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <input type="text" id="searchInput" placeholder="🔍 Tìm địa điểm…" />
+  <button id="btnSearch" class="secondary">Tìm</button>
+  <select id="selCity"><option value="">-- Thành phố --</option></select>
+  <select id="selDistrict"><option value="">-- Quận/Huyện --</option></select>
+  <select id="selStreet"><option value="">-- Đường --</option></select>
+  <button id="btnLoad">Lọc điểm</button>
+  <button id="btnClear" class="secondary">Reset</button>
+</div>
+
+<!-- Marker count -->
+<div id="counter" style="display:none"></div>
+
+<!-- Info panel -->
+<div id="infoPanel">
+  <button class="close-btn" id="closeInfo">&times;</button>
+  <h3 id="infoTitle">Chi tiết điểm</h3>
+  <div id="infoBody"></div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ══════════════════════════════════════════════════
+//  CONFIG
+// ══════════════════════════════════════════════════
+const API          = 'http://localhost:4000/api';
+const DEFAULT_LAT  = 10.8231;
+const DEFAULT_LNG  = 106.6297;
+const DEFAULT_ZOOM = 12;
+
+// ══════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════
+let map;
+let layerGroup  = null;   // L.LayerGroup chứa toàn bộ marker
+let streetMap   = {};     // id → street object
+let allStreets  = [];
+
+// ══════════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════════
+async function apiFetch(path) {
+  const res = await fetch(API + path);
+  if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
+  return res.json();
+}
+
+function setLoading(on) {
+  document.getElementById('loading').classList.toggle('hidden', !on);
+}
+
+function setCounter(n) {
+  const el = document.getElementById('counter');
+  if (n === 0) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.textContent = `${n} điểm`;
+}
+
+function hideInfo() {
+  document.getElementById('infoPanel').style.display = 'none';
+}
+
+// ══════════════════════════════════════════════════
+//  LEAFLET MAP INIT
+// ══════════════════════════════════════════════════
+function initMap() {
+  map = L.map('map', { zoomControl: true }).setView([DEFAULT_LAT, DEFAULT_LNG], DEFAULT_ZOOM);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
+
+  layerGroup = L.layerGroup().addTo(map);
+}
+
+// ══════════════════════════════════════════════════
+//  CUSTOM CIRCLE ICON
+// ══════════════════════════════════════════════════
+function circleIcon(color) {
+  color = color || '#4285f4';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+    <circle cx="7" cy="7" r="6" fill="${color}" stroke="#fff" stroke-width="1.5"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg,
+    className: '',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
+
+// ══════════════════════════════════════════════════
+//  MARKERS
+// ══════════════════════════════════════════════════
+function clearMarkers() {
+  if (layerGroup) layerGroup.clearLayers();
+  setCounter(0);
+  hideInfo();
+}
+
+function createMarker(pos) {
+  // pos: { id, x:lon, y:lat, streets:[], speed, ban, ... }
+  const lat = pos.y, lng = pos.x;
+  if (lat == null || lng == null) return null;
+
+  const streetNames = (pos.streets || [])
+    .map(id => streetMap[id]?.name)
+    .filter(Boolean)
+    .join(', ') || '—';
+
+  const m = L.marker([lat, lng], { icon: circleIcon('#4285f4'), title: streetNames });
+  m.on('click', () => showInfo(pos, streetNames, m));
+  return m;
+}
+
+// ══════════════════════════════════════════════════
+//  LOAD ALL POSITIONS FROM DB
+// ══════════════════════════════════════════════════
+async function loadPositions(endpoint) {
+  endpoint = endpoint || '/positions';
+  clearMarkers();
+  setLoading(true);
+  try {
+    const positions = await apiFetch(endpoint);
+    if (!Array.isArray(positions) || positions.length === 0) {
+      setCounter(0);
+      setLoading(false);
+      return;
+    }
+
+    const bounds = L.latLngBounds();
+    let valid = 0;
+    let firstLatLng = null;
+
+    positions.forEach(pos => {
+      const m = createMarker(pos);
+      if (!m) return;
+      m.addTo(layerGroup);
+      bounds.extend(m.getLatLng());
+      if (!firstLatLng) firstLatLng = m.getLatLng();
+      valid++;
+    });
+
+    setCounter(valid);
+
+    // Tâm theo marker đầu tiên, sau đó fit bounds nếu có nhiều điểm
+    if (firstLatLng) {
+      if (valid === 1) {
+        map.setView(firstLatLng, 15);
+      } else {
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
+    }
+  } catch (e) {
+    console.error('loadPositions', e);
+    alert('Không thể tải dữ liệu vị trí.\nKiểm tra server tại ' + API);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  INFO PANEL
+// ══════════════════════════════════════════════════
+function showInfo(pos, streetNames, marker) {
+  document.getElementById('infoTitle').textContent = streetNames || 'Điểm #' + pos.id;
+
+  const rows = [
+    ['ID',      pos.id],
+    ['Lat / Lng', `${Number(pos.y).toFixed(6)} / ${Number(pos.x).toFixed(6)}`],
+    ['Đường',   streetNames],
+    ['Tốc độ',  pos.speed  != null ? pos.speed + ' km/h' : '—'],
+    ['Làn xe',  pos.lane   ?? '—'],
+    ['Đỗ xe',   pos.park   != null ? (pos.park   ? 'Có' : 'Không') : '—'],
+    ['Lũ lụt',  pos.flooding != null ? (pos.flooding ? 'Có' : 'Không') : '—'],
+    ['Thu phí', pos.tool   != null ? (pos.tool   ? 'Có' : 'Không') : '—'],
+  ];
+
+  document.getElementById('infoBody').innerHTML = rows
+    .map(([l, v]) => `<div class="row"><span class="label">${l}</span><span>${v}</span></div>`)
+    .join('');
+
+  document.getElementById('infoPanel').style.display = 'block';
+  map.panTo(marker.getLatLng());
+}
+
+// ══════════════════════════════════════════════════
+//  DROPDOWN LOADERS
+// ══════════════════════════════════════════════════
+async function loadCities() {
+  try {
+    const cities = await apiFetch('/cities');
+    const sel = document.getElementById('selCity');
+    cities.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id; o.textContent = c.name;
+      sel.appendChild(o);
+    });
+  } catch (e) { console.error('loadCities', e); }
+}
+
+async function loadDistricts(cityId) {
+  const sel = document.getElementById('selDistrict');
+  sel.innerHTML = '<option value="">-- Quận/Huyện --</option>';
+  document.getElementById('selStreet').innerHTML = '<option value="">-- Đường --</option>';
+  if (!cityId) return;
+  try {
+    const list = await apiFetch(`/districts?city_id=${cityId}`);
+    list.forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.id; o.textContent = d.name;
+      sel.appendChild(o);
+    });
+  } catch (e) { console.error('loadDistricts', e); }
+}
+
+async function loadStreets(districtId, cityId) {
+  const sel = document.getElementById('selStreet');
+  sel.innerHTML = '<option value="">-- Đường --</option>';
+  let q = '';
+  if (districtId)   q = `?district_id=${districtId}`;
+  else if (cityId)  q = `?city_id=${cityId}`;
+  if (!q) return;
+  try {
+    const list = await apiFetch(`/streets${q}`);
+    allStreets = list;
+    list.forEach(s => {
+      streetMap[s.id] = s;
+      const o = document.createElement('option');
+      o.value = s.id; o.textContent = s.name;
+      sel.appendChild(o);
+    });
+  } catch (e) { console.error('loadStreets', e); }
+}
+
+// ══════════════════════════════════════════════════
+//  SEARCH (Nominatim geocoding – miễn phí, OSM)
+// ══════════════════════════════════════════════════
+function setupSearch() {
+  const input  = document.getElementById('searchInput');
+  const btn    = document.getElementById('btnSearch');
+
+  async function doSearch() {
+    const q = input.value.trim();
+    if (!q) return;
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=vn`;
+      const res  = await fetch(url, { headers: { 'Accept-Language': 'vi' } });
+      const data = await res.json();
+      if (data.length === 0) { alert('Không tìm thấy địa điểm: ' + q); return; }
+      const { lat, lon } = data[0];
+      map.setView([parseFloat(lat), parseFloat(lon)], 15);
+    } catch (e) { console.error('search', e); }
+  }
+
+  btn.addEventListener('click', doSearch);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+}
+
+// ══════════════════════════════════════════════════
+//  UI LISTENERS
+// ══════════════════════════════════════════════════
+function setupUIListeners() {
+  document.getElementById('selCity').addEventListener('change', async e => {
+    await loadDistricts(e.target.value);
+    if (!e.target.value) { streetMap = {}; allStreets = []; }
+  });
+
+  document.getElementById('selDistrict').addEventListener('change', async e => {
+    const cityId = document.getElementById('selCity').value;
+    await loadStreets(e.target.value, cityId);
+  });
+
+  document.getElementById('btnLoad').addEventListener('click', () => {
+    const streetId = document.getElementById('selStreet').value;
+    const endpoint = streetId ? `/positions?street_id=${streetId}` : '/positions';
+    loadPositions(endpoint);
+  });
+
+  document.getElementById('btnClear').addEventListener('click', () => {
+    clearMarkers();
+    document.getElementById('selCity').value = '';
+    document.getElementById('selDistrict').innerHTML = '<option value="">-- Quận/Huyện --</option>';
+    document.getElementById('selStreet').innerHTML   = '<option value="">-- Đường --</option>';
+    document.getElementById('searchInput').value = '';
+    streetMap = {}; allStreets = [];
+    map.setView([DEFAULT_LAT, DEFAULT_LNG], DEFAULT_ZOOM);
+  });
+
+  document.getElementById('closeInfo').addEventListener('click', hideInfo);
+}
+
+// ══════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════
+(async function boot() {
+  initMap();
+  setupSearch();
+  setupUIListeners();
+  await loadCities();
+
+  // Load toàn bộ marker từ DB ngay khi trang mở
+  await loadPositions('/positions');
+
+  setLoading(false);
+})();
+</script>
+</body>
+</html>
