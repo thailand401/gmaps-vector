@@ -1,5 +1,13 @@
 // API configuration
-const API_BASE_URL = '/api';
+const API_BASE_URL = (() => {
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        return 'http://localhost:4000/api';
+    }
+    if (location.hostname.includes('.hf.space')) {
+        return 'https://tataaicoltd-api.hf.space/api';
+    }
+    return '/api';
+})();
 
 class ApiClient {
     constructor(baseUrl = API_BASE_URL) {

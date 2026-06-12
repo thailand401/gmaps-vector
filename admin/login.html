@@ -178,7 +178,7 @@
         })();
 
         // Auth logic
-        const API_BASE = '/api';
+        const API_BASE = location.hostname === 'localhost' ? 'http://localhost:4000/api' : '/api';
 
         function getRedirectUrl() {
             const params = new URLSearchParams(location.search);

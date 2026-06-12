@@ -55,7 +55,8 @@ async function searchPoints({ lat1, lon1, lat2, lon2 }) {
     const points = [{ lat: lat1, lon: lon1 }];
     if (lat2 != null && lon2 != null) points.push({ lat: lat2, lon: lon2 });
 
-    const resp = await fetch('/api/search', {
+    const _apiBase = location.hostname === 'localhost' ? 'http://localhost:4000/api' : '/api';
+    const resp = await fetch(`${_apiBase}/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' },
         body: JSON.stringify({ points })

@@ -1,6 +1,6 @@
 // ==================== ENTRY POINT ====================
 
-const apiClient = new ApiClient('/api');
+const apiClient = new ApiClient(location.hostname === 'localhost' ? 'http://localhost:4000/api' : '/api');
 //top-left : 10.947849, 106.532560, 17z bottom-right: 10.629144, 106.828837, 17z
 // Shared state
 let locationsData = [];

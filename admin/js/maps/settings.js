@@ -1,7 +1,8 @@
 // ==================== SETTINGS ====================
 
 async function loadLocations() {
-    const res = await fetch('/api/map-images', { headers: { 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' } });
+    const _apiBase = location.hostname === 'localhost' ? 'http://localhost:4000/api' : '/api';
+    const res = await fetch(`${_apiBase}/map-images`, { headers: { 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' } });
     const data = await res.json();
     locationsData = data.images.map((src, i) => ({ src, name: `Map ${i + 1}` }));
     filteredLocations = locationsData;

@@ -35,7 +35,8 @@ async function loadAllPointrsFromDB() {
     pointrData.forEach(d => { if (d.dbId) renderedDbIds.add(d.dbId); });
 
     try {
-        const resp = await fetch('/api/positions', { headers: { 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' } });
+        const _apiBase = location.hostname === 'localhost' ? 'http://localhost:4000/api' : '/api';
+        const resp = await fetch(`${_apiBase}/positions`, { headers: { 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' } });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const positions = await resp.json();
         if (!Array.isArray(positions) || positions.length === 0) return;
@@ -153,16 +154,8 @@ function collectStreetPointrs(streetId) {
 function nearestNeighborSort(pts) {
     if (pts.length <= 1) return [...pts];
     const rem = [...pts];
-    // Start from the leftmost point (smallest X) for consistent direction
-    let startIdx = 0;
-    for (let i = 1; i < rem.length; i++) {
-        if (rem[i].initialClientX < rem[startIdx].initialClientX ||
-            (rem[i].initialClientX === rem[startIdx].initialClientX && rem[i].initialClientY < rem[startIdx].initialClientY)) {
-            startIdx = i;
-        }
-    }
     const result = [];
-    let cur = rem.splice(startIdx, 1)[0];
+    let cur = rem.splice(0, 1)[0];
     result.push(cur);
     while (rem.length > 0) {
         let minD = Infinity, minI = 0;
@@ -361,7 +354,8 @@ function deletePointr(pointrId) {
     if (data) {
         // If this pointr exists in DB, delete it cascade (remove from Positions + Streets.positions)
         if (data.dbId) {
-            fetch(`/api/positions/${data.dbId}/cascade`, { method: 'DELETE', headers: { 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' } })
+            const _apiBaseCascade = location.hostname === 'localhost' ? 'http://localhost:4000/api' : '/api';
+            fetch(`${_apiBaseCascade}/positions/${data.dbId}/cascade`, { method: 'DELETE', headers: { 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' } })
                 .then(r => { if (!r.ok) r.text().then(t => console.error('[deletePointr] cascade failed:', t)); })
                 .catch(err => console.error('[deletePointr] cascade error:', err));
         }
@@ -378,43 +372,13 @@ function deletePointr(pointrId) {
 
 // ==================== POINTR MODALS ====================
 
-function _haversineKm(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function _nearbyStreetIds(centerLat, centerLon, radiusKm = 10) {
-    const streetIds = new Set();
-    const check = (d) => {
-        if (d.lat == null || d.lon == null) return;
-        if (_haversineKm(centerLat, centerLon, d.lat, d.lon) <= radiusKm) {
-            (d.streets || []).forEach(sid => streetIds.add(sid));
-        }
-    };
-    pointrData.forEach(check);
-    pointrReload.forEach(check);
-    return streetIds;
-}
-
 function showSetNodeModal(pointrId) {
-    const data = pointrData.get(pointrId) || pointrReload.get(pointrId);
+    const data = pointrData.get(pointrId);
     if (!data) return;
     
-    const currentStreets = [...(data.streets || [])];
-    const allStreets = allStreetsData || [];
-
-    // Build street options from nearby pointrs (r=10km) instead of all streets
-    const nearbyIds = (data.lat != null && data.lon != null)
-        ? _nearbyStreetIds(data.lat, data.lon, 10)
-        : null;
-    const availableStreets = nearbyIds
-        ? allStreets.filter(s => nearbyIds.has(s.id) || currentStreets.includes(s.id))
-        : allStreets;
-
+    const currentStreets = data.streets || [];
+    const availableStreets = allStreetsData || [];
+    
     let tableHTML = `<table class="node-streets-table">
         <thead>
             <tr>
@@ -426,7 +390,7 @@ function showSetNodeModal(pointrId) {
         <tbody id="nodeStreetsBody">`;
     
     currentStreets.forEach((streetId, index) => {
-        const street = allStreets.find(s => s.id === streetId);
+        const street = availableStreets.find(s => s.id === streetId);
         const streetName = street ? street.name : 'Unknown';
         tableHTML += `<tr data-street-id="${streetId}">
             <td>${streetId}</td>
@@ -482,7 +446,7 @@ function showSetNodeModal(pointrId) {
         }
         
         const tbody = document.getElementById('nodeStreetsBody');
-        const street = allStreets.find(s => s.id === streetId);
+        const street = availableStreets.find(s => s.id === streetId);
         const newIndex = currentStreets.length;
         
         const row = document.createElement('tr');
@@ -700,7 +664,8 @@ function showSaveAllModal() {
         }
 
         try {
-            const resp = await fetch('/api/positions/bulk', {
+            const _apiBaseBulk = location.hostname === 'localhost' ? 'http://localhost:4000/api' : '/api';
+            const resp = await fetch(`${_apiBaseBulk}/positions/bulk`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' },
                 body: JSON.stringify(payload)
@@ -886,23 +851,20 @@ function handleGalleryClick(e) {
         refreshStreetPath();
 
         // Open create-street modal; when new street is created, assign it to this pointr
-        showCreateStreetModal((newStreetId, newStreet) => {
+        showCreateStreetModal((newStreetId) => {
             try { document.getElementById('Streets').value = newStreetId; } catch (e) {}
             const streetName = document.getElementById('Streets').selectedOptions[0]?.text || 'New Street';
             const data = pointrData.get(pointrId);
             if (data) {
                 data.streets = [parseInt(newStreetId)];
+                // update tooltip
                 const tooltip = data.element ? data.element.querySelector('.pointr-tooltip') : null;
                 if (tooltip) tooltip.textContent = streetName;
             }
             // update streetPointsList entry
             const sp = streetPointsList.find(p => p.id === pointrId);
             if (sp) sp.streetId = parseInt(newStreetId);
-            // add new street to allStreetsData so showSaveAllModal can find it
-            if (newStreet && Array.isArray(allStreetsData) && !allStreetsData.find(s => s.id === newStreet.id)) {
-                allStreetsData.push(newStreet);
-            }
-            // pointr-temp becomes a real pointr ready for Save All
+            // remove temp marker class
             pointr.classList.remove('pointr-temp');
             refreshStreetPath();
         });
