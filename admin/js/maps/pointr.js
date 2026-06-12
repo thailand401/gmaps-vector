@@ -162,10 +162,19 @@ function _geoDist2(a, b) {
 
 function nearestNeighborSort(pts) {
     if (pts.length <= 1) return [...pts];
+
+    // Find the pair of points with the maximum distance (diameter of the set).
+    // One of those endpoints is the natural start of the street path.
+    let maxD = -1, startIdx = 0;
+    for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+            const d = _geoDist2(pts[i], pts[j]);
+            if (d > maxD) { maxD = d; startIdx = i; }
+        }
+    }
+
     const rem = [...pts];
     const result = [];
-    // Start from the northernmost point (highest lat) as the path start
-    const startIdx = rem.reduce((best, p, i) => (p.lat ?? 0) > (rem[best].lat ?? 0) ? i : best, 0);
     let cur = rem.splice(startIdx, 1)[0];
     result.push(cur);
     while (rem.length > 0) {
@@ -191,13 +200,9 @@ function clearStreetPath() {
     if (svg) svg.innerHTML = '';
 }
 
-function refreshStreetPath() {
-    const svg = document.getElementById('street-path-svg');
-    if (!svg) return;
-    svg.innerHTML = '';
-    if (!activeStreetPathId) return;
-    const pts = collectStreetPointrs(activeStreetPathId);
-    if (pts.length < 2) return;
+const _PATH_COLORS = ['#2196F3','#E91E63','#4CAF50','#FF9800','#9C27B0','#00BCD4','#FF5722','#8BC34A','#F44336','#3F51B5'];
+
+function _appendPolyline(svg, pts, color) {
     const sorted = nearestNeighborSort(pts);
     const container = document.querySelector('.container');
     const sl = container.scrollLeft;
@@ -205,11 +210,49 @@ function refreshStreetPath() {
     const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
     polyline.setAttribute('points', sorted.map(d => `${d.initialClientX - sl},${d.initialClientY - st}`).join(' '));
     polyline.setAttribute('fill', 'none');
-    polyline.setAttribute('stroke', '#2196F3');
+    polyline.setAttribute('stroke', color);
     polyline.setAttribute('stroke-width', '2');
     polyline.setAttribute('stroke-dasharray', '6,3');
     polyline.setAttribute('opacity', '0.8');
     svg.appendChild(polyline);
+}
+
+function refreshStreetPath() {
+    const svg = document.getElementById('street-path-svg');
+    if (!svg) return;
+    svg.innerHTML = '';
+
+    const showAll = document.getElementById('sIsStreetPath')?.checked;
+
+    if (showAll) {
+        // Draw paths for all streets that have pointrs (Maps → iterate values)
+        const streetIds = new Set();
+        pointrReload.forEach(d => { if (Array.isArray(d.streets)) d.streets.forEach(sid => streetIds.add(sid)); });
+        pointrData.forEach(d => {   if (Array.isArray(d.streets)) d.streets.forEach(sid => streetIds.add(sid)); });
+        let colorIdx = 0;
+        streetIds.forEach(sid => {
+            const pts = collectStreetPointrs(sid);
+            if (pts.length >= 2) {
+                const color = sid === activeStreetPathId
+                    ? '#2196F3'
+                    : _PATH_COLORS[(colorIdx + 1) % _PATH_COLORS.length];
+                colorIdx++;
+                _appendPolyline(svg, pts, color);
+            }
+        });
+        // Also draw active street on top if not already covered
+        if (activeStreetPathId && !streetIds.has(activeStreetPathId)) {
+            const pts = collectStreetPointrs(activeStreetPathId);
+            if (pts.length >= 2) _appendPolyline(svg, pts, '#2196F3');
+        }
+        return;
+    }
+
+    // Default: draw only the active street
+    if (!activeStreetPathId) return;
+    const pts = collectStreetPointrs(activeStreetPathId);
+    if (pts.length < 2) return;
+    _appendPolyline(svg, pts, '#2196F3');
 }
 
 // ==================== POINTR CREATION ====================
@@ -919,6 +962,80 @@ function initContainerScrollListener() {
 
 function initKeyboardListener() {
     document.addEventListener('keydown', (e) => {
+        // Skip if focus is inside an input/textarea/select
+        const tag = document.activeElement?.tagName;
+        const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+
+        if (!inInput) {
+            // N -> Create Point
+            if (e.key === 'n' || e.key === 'N') {
+                const ed = document.getElementById('editor');
+                ed.value = 'create'; ed.dispatchEvent(new Event('change'));
+                e.preventDefault();
+                return;
+            }
+            // M -> Move Point
+            if (e.key === 'm' || e.key === 'M') {
+                const ed = document.getElementById('editor');
+                ed.value = 'move'; ed.dispatchEvent(new Event('change'));
+                e.preventDefault();
+                return;
+            }
+            // V -> toggle View All Street Paths (sIsStreetPath)
+            if (e.key === 'v' || e.key === 'V') {
+                const cb = document.getElementById('sIsStreetPath');
+                if (cb) { cb.checked = !cb.checked; refreshStreetPath(); }
+                e.preventDefault();
+                return;
+            }
+            // B -> toggle Street Panel
+            if (e.key === 'b' || e.key === 'B') {
+                document.getElementById('streetPanelToggle')?.click();
+                e.preventDefault();
+                return;
+            }
+            // T -> reset Streets dropdown to "all"
+            if (e.key === 't' || e.key === 'T') {
+                const sel = document.getElementById('Streets');
+                if (sel) { sel.value = 'all'; sel.dispatchEvent(new Event('change')); }
+                e.preventDefault();
+                return;
+            }
+            // + / - -> increase / decrease tile size by 50px
+            if (e.key === '+' || e.key === '=') {
+                const sl = document.getElementById('sSize');
+                if (sl) { sl.value = parseInt(sl.value) + 50; sl.dispatchEvent(new Event('change')); }
+                e.preventDefault();
+                return;
+            }
+            if (e.key === '-' || e.key === '_') {
+                const sl = document.getElementById('sSize');
+                if (sl) { sl.value = Math.max(50, parseInt(sl.value) - 50); sl.dispatchEvent(new Event('change')); }
+                e.preventDefault();
+                return;
+            }
+            // < / > -> decrease / increase opacity by 5
+            if (e.key === '<' || e.key === ',') {
+                const sl = document.getElementById('sOpacity');
+                if (sl) { sl.value = Math.max(0, parseInt(sl.value) - 5); sl.dispatchEvent(new Event('input')); }
+                e.preventDefault();
+                return;
+            }
+            if (e.key === '>' || e.key === '.') {
+                const sl = document.getElementById('sOpacity');
+                if (sl) { sl.value = Math.min(100, parseInt(sl.value) + 5); sl.dispatchEvent(new Event('input')); }
+                e.preventDefault();
+                return;
+            }
+        }
+
+        // Ctrl+S -> Save All modal
+        if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            showSaveAllModal();
+            return;
+        }
+
         if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
             const editor = document.querySelector('#editor');
             if (editor.value === 'move' && activePointrId) {
@@ -957,11 +1074,20 @@ function initPointrDrag() {
     });
 }
 
+const _EDITOR_CURSORS = { create: 'crosshair', move: 'all-scroll', view: 'default' };
+
+function _applyEditorCursor(mode) {
+    document.querySelector('.container').style.cursor = _EDITOR_CURSORS[mode] || 'default';
+}
+
 function initEditorListener() {
     const editor = document.getElementById('editor');
     editor.addEventListener('change', (e) => {
         document.body.className = `mode-${e.target.value}`;
+        _applyEditorCursor(e.target.value);
         activePointrId = null;
         updateActivePointrVisual();
     });
+    // Apply initial cursor on load
+    _applyEditorCursor(editor.value);
 }

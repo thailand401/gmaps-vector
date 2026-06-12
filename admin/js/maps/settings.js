@@ -72,6 +72,10 @@ function initSettings() {
         if (window._gallerySettings) window._gallerySettings.size = newSize;
     });
 
+    document.getElementById('sIsStreetPath').addEventListener('change', () => {
+        refreshStreetPath();
+    });
+
     document.getElementById('settingsSave').addEventListener('click', () => {
         const items = parseInt(document.getElementById('sItems').value) || 23;
         const newSize = parseInt(document.getElementById('sSize').value) || 400;

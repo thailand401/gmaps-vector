@@ -175,51 +175,23 @@ class MapsService:
                 return prev[-1]
 
             name_norm = _normalize(data.name)
-            city_id = data.city_id
-            district_id = data.district_id
 
-            # Fetch candidate existing streets in same district or city
-            query = supabase.table("Streets").select("id, name, district_id, city_id").order("name")
-            if district_id is not None:
-                query = query.eq("district_id", district_id)
-            elif city_id is not None:
-                query = query.eq("city_id", city_id)
-            existing_res = query.execute()
+            # Fetch ALL streets globally to check for duplicates across all districts/cities
+            existing_res = supabase.table("Streets").select("id, name, district_id, city_id").order("name").execute()
             existing_list = existing_res.data or []
             for item in existing_list:
                 existing_name = item.get('name') or ''
                 en_norm = _normalize(existing_name)
-                # exact or containment
-                if en_norm == name_norm or (name_norm and en_norm and (name_norm in en_norm or en_norm in name_norm)):
-                    raise Exception(f"Similar street exists: {existing_name} (id={item.get('id')})")
-                # small edit distance -> likely duplicate; threshold scales with length
+                if not en_norm:
+                    continue
+                # exact or containment match
+                if en_norm == name_norm or (name_norm and (name_norm in en_norm or en_norm in name_norm)):
+                    raise Exception(f"DUPLICATE_STREET:{item.get('id')}:{existing_name}")
+                # edit distance threshold scales with length
                 max_dist = max(2, int(max(len(en_norm), len(name_norm)) * 0.2))
                 dist = _levenshtein(en_norm, name_norm)
-                # debug log
-                try:
-                    import logging
-                    logging.getLogger(__name__).info(f"create_street: compare '{name_norm}' vs '{en_norm}' -> dist={dist} threshold={max_dist}")
-                except Exception:
-                    pass
                 if dist <= max_dist:
                     raise Exception(f"DUPLICATE_STREET:{item.get('id')}:{existing_name}")
-
-            # Also perform a global fuzzy search to catch similar names in other districts/cities
-            try:
-                global_results = await MapsService.search_streets_by_text(data.name, district_id=None, city_id=None, limit=10)
-                # Accept if any match has a low score (<= 0.15)
-                for r in (global_results or []):
-                    if float(r.get('score', 1.0)) <= 0.15:
-                        raise Exception(f"DUPLICATE_STREET:{r.get('id')}:{r.get('name')}")
-            except Exception as e:
-                # If search_streets_by_text raised an exception because of DB, re-raise as generic
-                if str(e).startswith('Failed to create street'):
-                    raise
-                # If we raised above due to similarity, pass it up
-                if 'Similar street exists' in str(e) or 'Similar street exists elsewhere' in str(e):
-                    raise
-                # otherwise ignore search errors and proceed with insert
-                pass
 
             # No similar found -> proceed to insert
             next_id = _next_id("Streets")
