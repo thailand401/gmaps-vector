@@ -496,7 +496,8 @@ async def search_nearest(payload: dict = Body(...)):
 
 # Serve admin static files (must be mounted last, after all API routes)
 _admin_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'admin')
-app.mount("/", StaticFiles(directory=_admin_dir, html=True), name="admin")
+if os.path.isdir(_admin_dir):
+    app.mount("/", StaticFiles(directory=_admin_dir, html=True), name="admin")
 
 
 if __name__ == '__main__':
