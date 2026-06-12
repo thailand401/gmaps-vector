@@ -19,6 +19,7 @@ window.addEventListener('load', async () => {
     initEditorListener();
     initSettings();
     initSearch();
+    initStreetPanel();
 
     // Test pointr
     const allPointrs = [

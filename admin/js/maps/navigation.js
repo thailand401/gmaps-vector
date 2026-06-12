@@ -345,3 +345,135 @@ async function initFilterListeners() {
         if (e.key === 'Escape') closeModal();
     });
 }
+
+// ==================== STREET PANEL ====================
+
+let _streetPanelOpen = false;
+let _streetPanelDebounce = null;
+
+function initStreetPanel() {
+    const toggle = document.getElementById('streetPanelToggle');
+    const panel  = document.getElementById('streetPanel');
+    if (!toggle || !panel) return;
+
+    toggle.addEventListener('click', () => {
+        _streetPanelOpen = !_streetPanelOpen;
+        panel.classList.toggle('open', _streetPanelOpen);
+        toggle.classList.toggle('open', _streetPanelOpen);
+        if (_streetPanelOpen) refreshStreetPanel();
+    });
+
+    // Refresh on scroll (debounced 400ms)
+    document.querySelector('.container').addEventListener('scroll', () => {
+        if (!_streetPanelOpen) return;
+        clearTimeout(_streetPanelDebounce);
+        _streetPanelDebounce = setTimeout(refreshStreetPanel, 400);
+    });
+}
+
+function getScreenCenterLatLon() {
+    const container = document.querySelector('.container');
+    const cx = container.scrollLeft + container.clientWidth  / 2;
+    const cy = container.scrollTop  + container.clientHeight / 2;
+    const sizePer = parseInt(document.getElementById('sSize').value) / 2400;
+    return pixelToLatLon(cx, cy, sizePer);
+}
+
+function haverDistKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function refreshStreetPanel() {
+    const listEl = document.getElementById('streetPanelList');
+    if (!listEl) return;
+
+    const { lat: cLat, lon: cLon } = getScreenCenterLatLon();
+
+    // Collect (streetId → minDist) using loaded pointrs
+    const sidDist = new Map();
+    const checkPtrs = (d) => {
+        if (d.lat == null || d.lon == null) return;
+        const dist = haverDistKm(cLat, cLon, d.lat, d.lon);
+        if (dist > 5) return;
+        (d.streets || []).forEach(sid => {
+            if (!sidDist.has(sid) || dist < sidDist.get(sid)) sidDist.set(sid, dist);
+        });
+    };
+    if (typeof pointrReload !== 'undefined') pointrReload.forEach(checkPtrs);
+    if (typeof pointrData   !== 'undefined') pointrData.forEach(checkPtrs);
+
+    if (sidDist.size === 0) {
+        listEl.innerHTML = '<div class="street-panel-empty">Không có street nào trong 5km</div>';
+        return;
+    }
+
+    // Sort by distance, then name
+    const entries = [...sidDist.entries()]
+        .map(([sid, dist]) => ({ sid, dist, street: (allStreetsData || []).find(s => s.id === sid) }))
+        .filter(e => e.street)
+        .sort((a, b) => a.dist - b.dist || (a.street.name || '').localeCompare(b.street.name || ''));
+
+    const currentStreetId = parseInt(document.getElementById('Streets').value) || null;
+
+    listEl.innerHTML = '';
+    entries.forEach(({ sid, dist, street }) => {
+        const item = document.createElement('div');
+        item.className = 'street-panel-item' + (sid === currentStreetId ? ' active' : '');
+        item.dataset.streetId = sid;
+
+        const distStr = dist < 1 ? `${Math.round(dist * 1000)}m` : `${dist.toFixed(1)}km`;
+        const typeStr = street.type ? ` · ${street.type}` : '';
+
+        item.innerHTML = `
+            <span class="street-panel-item-name">${escapeHtml(street.name || '')}</span>
+            <span class="street-panel-item-meta">${distStr}${typeStr}</span>
+        `;
+
+        item.addEventListener('click', () => selectStreetFromPanel(sid));
+        listEl.appendChild(item);
+    });
+}
+
+async function selectStreetFromPanel(streetId) {
+    const street = (allStreetsData || []).find(s => s.id === streetId);
+    if (!street) return;
+
+    const cityId     = street.city_id;
+    const districtId = street.district_id;
+
+    // 1. Set City
+    const citySelect = document.getElementById('Cities');
+    if (cityId && citySelect.value != cityId) {
+        citySelect.value = cityId;
+        localStorage.setItem('maps_city', cityId);
+        await loadDistricts(cityId);
+    }
+
+    // 2. Set District
+    const districtSelect = document.getElementById('Districts');
+    if (districtId && districtSelect.value != districtId) {
+        districtSelect.value = districtId;
+        localStorage.setItem('maps_district', districtId);
+        await loadStreets(districtId, cityId);
+    }
+
+    // 3. Set Street
+    const streetSelect = document.getElementById('Streets');
+    streetSelect.value = streetId;
+    localStorage.setItem('maps_street', String(streetId));
+
+    // Highlight active item in panel
+    document.querySelectorAll('.street-panel-item').forEach(el => {
+        el.classList.toggle('active', parseInt(el.dataset.streetId) === streetId);
+    });
+
+    // Draw path on map
+    if (typeof scrollToStreet === 'function') scrollToStreet(streetId);
+}
+

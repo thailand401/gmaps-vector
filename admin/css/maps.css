@@ -56,7 +56,8 @@ h1 {
     height: auto;
     display: block;
     object-fit: cover;
-    border: 0.1px solid rgba(0, 0, 0, 0.1);
+    border-right: 0.1px solid rgba(0, 0, 0, 1);
+    border-bottom: 0.1px solid rgba(0, 0, 0, 1);
 }
 
 .image-info {
@@ -271,6 +272,113 @@ h1 {
 
 .location-details p {
     margin: 6px 0;
+}
+
+/* ==================== STREET PANEL ==================== */
+
+.street-panel-toggle {
+    position: fixed;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    z-index: 200;
+    width: 22px;
+    height: 48px;
+    border: 1px solid #bbb;
+    border-left: none;
+    border-radius: 0 6px 6px 0;
+    background: rgba(255,255,255,0.92);
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 2px 0 6px rgba(0,0,0,0.12);
+    padding: 0;
+    transition: background 0.15s;
+}
+.street-panel-toggle:hover { background: #e8f0fe; }
+.street-panel-toggle.open  { background: #d0e4ff; border-color: #2b7cff; }
+
+.street-panel {
+    position: fixed;
+    top: 50%;
+    left: -240px;
+    transform: translateY(-50%);
+    z-index: 199;
+    width: 240px;
+    max-height: 70vh;
+    background: rgba(255,255,255,0.97);
+    border: 1px solid #ccc;
+    border-radius: 0 8px 8px 0;
+    box-shadow: 4px 0 16px rgba(0,0,0,0.13);
+    display: flex;
+    flex-direction: column;
+    transition: left 0.22s ease;
+    overflow: hidden;
+}
+.street-panel.open { left: 22px; }
+
+.street-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px 6px;
+    border-bottom: 1px solid #eee;
+    flex-shrink: 0;
+}
+.street-panel-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: #222;
+}
+.street-panel-radius {
+    font-size: 10px;
+    color: #888;
+    background: #f0f4ff;
+    border-radius: 10px;
+    padding: 1px 7px;
+}
+
+.street-panel-list {
+    overflow-y: auto;
+    flex: 1;
+    padding: 4px 0;
+}
+
+.street-panel-empty {
+    font-size: 11px;
+    color: #aaa;
+    text-align: center;
+    padding: 18px 10px;
+}
+
+.street-panel-item {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f5f5f5;
+    transition: background 0.1s;
+}
+.street-panel-item:hover { background: #e8f0fe; }
+.street-panel-item.active { background: #d0e4ff; }
+
+.street-panel-item-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1a3a6c;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.street-panel-item-meta {
+    font-size: 10px;
+    color: #888;
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /* ==================== SEARCH ==================== */
