@@ -3,6 +3,15 @@
 // Global variable to store all streets from database
 let allStreetsData = [];
 
+function escapeHtml(text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // Helper: populate a select, preserving negative-value options (Tạo Mới)
 function populateSelect(selectEl, items, labelKey, valueKey) {
     const negativeOpts = Array.from(selectEl.options).filter(o => parseInt(o.value) < 0);
@@ -192,7 +201,48 @@ function showCreateStreetModal(onCreated, onCancel) {
                 try { onCreated(street.id); } catch (_) {}
             }
         } catch (err) {
-            document.getElementById('modalError').textContent = err.message;
+            // 409 duplicate: err.data = { error: 'duplicate', street: { id, name } }
+            const dup = err.status === 409 && err.data?.error === 'duplicate' ? err.data.street : null;
+            if (dup) {
+                const errEl = document.getElementById('modalError');
+                errEl.innerHTML = `Street tương tự đã tồn tại: <strong>${escapeHtml(dup.name)}</strong> (id=${dup.id})`;
+
+                // Show/replace apply button
+                let applyBtn = document.getElementById('applyFoundStreet');
+                if (!applyBtn) {
+                    applyBtn = document.createElement('button');
+                    applyBtn.id = 'applyFoundStreet';
+                    applyBtn.type = 'button';
+                    applyBtn.className = 'btn-submit';
+                    applyBtn.style.marginTop = '8px';
+                    errEl.after(applyBtn);
+                }
+                applyBtn.textContent = `Dùng "${dup.name}" (#${dup.id})`;
+                applyBtn.onclick = async () => {
+                    let foundStreet = (allStreetsData || []).find(s => s.id === dup.id);
+                    if (!foundStreet) {
+                        try {
+                            foundStreet = await apiClient.getStreetById(dup.id);
+                            if (foundStreet && typeof allStreetsData !== 'undefined' && Array.isArray(allStreetsData)) {
+                                allStreetsData.push(foundStreet);
+                            }
+                        } catch (_) {
+                            foundStreet = { id: dup.id, name: dup.name };
+                            if (typeof allStreetsData !== 'undefined' && Array.isArray(allStreetsData)) {
+                                allStreetsData.push(foundStreet);
+                            }
+                        }
+                    }
+                    closeModal();
+                    await loadStreets(districtId, cityId);
+                    document.getElementById('Streets').value = dup.id;
+                    if (typeof onCreated === 'function') {
+                        try { onCreated(dup.id); } catch (_) {}
+                    }
+                };
+            } else {
+                document.getElementById('modalError').textContent = err.message;
+            }
         }
     });
 }
@@ -400,7 +450,7 @@ function refreshStreetPanel() {
     const checkPtrs = (d) => {
         if (d.lat == null || d.lon == null) return;
         const dist = haverDistKm(cLat, cLon, d.lat, d.lon);
-        if (dist > 5) return;
+        if (dist > 0.8) return;
         (d.streets || []).forEach(sid => {
             if (!sidDist.has(sid) || dist < sidDist.get(sid)) sidDist.set(sid, dist);
         });
@@ -409,7 +459,7 @@ function refreshStreetPanel() {
     if (typeof pointrData   !== 'undefined') pointrData.forEach(checkPtrs);
 
     if (sidDist.size === 0) {
-        listEl.innerHTML = '<div class="street-panel-empty">Không có street nào trong 5km</div>';
+        listEl.innerHTML = '<div class="street-panel-empty">Không có street nào trong 2km</div>';
         return;
     }
 

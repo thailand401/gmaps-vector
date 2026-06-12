@@ -31,7 +31,10 @@ class ApiClient {
             const data = await response.json();
 
             if (!response.ok) {
-                throw new Error(data.detail || `HTTP ${response.status}`);
+                const err = new Error(data.detail || data.error || `HTTP ${response.status}`);
+                err.status = response.status;
+                err.data = data;   // full response body available as err.data
+                throw err;
             }
 
             return data;

@@ -366,12 +366,24 @@ async def search_streets(payload: dict = Body(...)):
 
 @app.post("/api/streets", response_model=Street)
 async def create_street(street: StreetCreate):
-    """Create a new street"""
+    """Create a new street. Returns 409 with {error:'duplicate', street:{id,name}} if similar exists."""
     try:
         return await MapsService.create_street(street)
     except Exception as e:
-        logger.error(f"Error creating street: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        msg = str(e)
+        # Structured duplicate signal: "Failed to create street: DUPLICATE_STREET:<id>:<name>"
+        inner = msg.replace("Failed to create street: ", "")
+        if inner.startswith("DUPLICATE_STREET:"):
+            parts = inner.split(":", 2)  # ["DUPLICATE_STREET", "<id>", "<name>"]
+            dup_id   = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+            dup_name = parts[2] if len(parts) > 2 else ""
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=409,
+                content={"error": "duplicate", "street": {"id": dup_id, "name": dup_name}}
+            )
+        logger.error(f"Error creating street: {msg}")
+        raise HTTPException(status_code=500, detail=msg)
 
 
 @app.get("/api/streets/{street_id}", response_model=Street)

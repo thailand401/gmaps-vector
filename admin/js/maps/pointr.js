@@ -409,7 +409,7 @@ function showSetNodeModal(pointrId) {
     if (!data) return;
     
     const currentStreets = data.streets || [];
-    const availableStreets = getStreetsNearPoint(data.lat, data.lon, 10);
+    const availableStreets = getStreetsNearPoint(data.lat, data.lon, 0.8);
     
     let tableHTML = `<table class="node-streets-table">
         <thead>
@@ -766,15 +766,6 @@ function showSaveAllModal() {
             confirmBtn.textContent = 'Confirm';
         }
     });
-}
-
-function escapeHtml(text) {
-    return String(text)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
 }
 
 // ==================== POINTR MOVEMENT ====================

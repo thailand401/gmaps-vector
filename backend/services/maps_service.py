@@ -202,7 +202,7 @@ class MapsService:
                 except Exception:
                     pass
                 if dist <= max_dist:
-                    raise Exception(f"Similar street exists: {existing_name} (id={item.get('id')})")
+                    raise Exception(f"DUPLICATE_STREET:{item.get('id')}:{existing_name}")
 
             # Also perform a global fuzzy search to catch similar names in other districts/cities
             try:
@@ -210,7 +210,7 @@ class MapsService:
                 # Accept if any match has a low score (<= 0.15)
                 for r in (global_results or []):
                     if float(r.get('score', 1.0)) <= 0.15:
-                        raise Exception(f"Similar street exists elsewhere: {r.get('name')} (id={r.get('id')})")
+                        raise Exception(f"DUPLICATE_STREET:{r.get('id')}:{r.get('name')}")
             except Exception as e:
                 # If search_streets_by_text raised an exception because of DB, re-raise as generic
                 if str(e).startswith('Failed to create street'):
