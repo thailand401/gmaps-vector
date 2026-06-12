@@ -151,18 +151,27 @@ function collectStreetPointrs(streetId) {
     return pts;
 }
 
+// Geographic distance squared (in degrees²) — good enough for relative comparison within a city
+function _geoDist2(a, b) {
+    const dLat = (a.lat ?? 0) - (b.lat ?? 0);
+    const dLon = (a.lon ?? 0) - (b.lon ?? 0);
+    // scale lon by cos(lat) to approximate equal-distance in both axes
+    const cosLat = Math.cos(((a.lat ?? 0) * Math.PI) / 180);
+    return dLat * dLat + (dLon * dLon * cosLat * cosLat);
+}
+
 function nearestNeighborSort(pts) {
     if (pts.length <= 1) return [...pts];
     const rem = [...pts];
     const result = [];
-    let cur = rem.splice(0, 1)[0];
+    // Start from the northernmost point (highest lat) as the path start
+    const startIdx = rem.reduce((best, p, i) => (p.lat ?? 0) > (rem[best].lat ?? 0) ? i : best, 0);
+    let cur = rem.splice(startIdx, 1)[0];
     result.push(cur);
     while (rem.length > 0) {
         let minD = Infinity, minI = 0;
         for (let i = 0; i < rem.length; i++) {
-            const dx = rem[i].initialClientX - cur.initialClientX;
-            const dy = rem[i].initialClientY - cur.initialClientY;
-            const d = dx * dx + dy * dy;
+            const d = _geoDist2(rem[i], cur);
             if (d < minD) { minD = d; minI = i; }
         }
         cur = rem.splice(minI, 1)[0];
@@ -372,12 +381,35 @@ function deletePointr(pointrId) {
 
 // ==================== POINTR MODALS ====================
 
+// Return streets from allStreetsData that have at least one pointr within radiusKm of (lat, lon)
+function getStreetsNearPoint(lat, lon, radiusKm) {
+    if (lat == null || lon == null) return allStreetsData || [];
+    const R = 6371;
+    function haverDist(lat1, lon1, lat2, lon2) {
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+    const nearSids = new Set();
+    const check = (d) => {
+        if (d.lat == null || d.lon == null) return;
+        if (haverDist(lat, lon, d.lat, d.lon) <= radiusKm) {
+            (d.streets || []).forEach(sid => nearSids.add(sid));
+        }
+    };
+    pointrReload.forEach(check);
+    pointrData.forEach(check);
+    const nearby = (allStreetsData || []).filter(s => nearSids.has(s.id));
+    return nearby.length > 0 ? nearby : (allStreetsData || []);
+}
+
 function showSetNodeModal(pointrId) {
     const data = pointrData.get(pointrId);
     if (!data) return;
     
     const currentStreets = data.streets || [];
-    const availableStreets = allStreetsData || [];
+    const availableStreets = getStreetsNearPoint(data.lat, data.lon, 10);
     
     let tableHTML = `<table class="node-streets-table">
         <thead>
@@ -857,16 +889,16 @@ function handleGalleryClick(e) {
             const data = pointrData.get(pointrId);
             if (data) {
                 data.streets = [parseInt(newStreetId)];
-                // update tooltip
                 const tooltip = data.element ? data.element.querySelector('.pointr-tooltip') : null;
                 if (tooltip) tooltip.textContent = streetName;
             }
-            // update streetPointsList entry
             const sp = streetPointsList.find(p => p.id === pointrId);
             if (sp) sp.streetId = parseInt(newStreetId);
-            // remove temp marker class
             pointr.classList.remove('pointr-temp');
             refreshStreetPath();
+        }, () => {
+            // User cancelled → remove the temp pointr
+            deletePointr(pointrId);
         });
         return;
     }

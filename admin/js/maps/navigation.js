@@ -106,7 +106,7 @@ function showCreateDistrictModal() {
     });
 }
 
-function showCreateStreetModal(onCreated) {
+function showCreateStreetModal(onCreated, onCancel) {
     const cityId = document.getElementById('Cities').value;
     const districtId = document.getElementById('Districts').value;
     if (!cityId || cityId === 'all' || parseInt(cityId) < 0) {
@@ -121,6 +121,19 @@ function showCreateStreetModal(onCreated) {
     }
     const cityName = document.getElementById('Cities').selectedOptions[0].text;
     const districtName = document.getElementById('Districts').selectedOptions[0].text;
+
+    // Build type dropdown from allStreetsData distinct types
+    const knownTypes = [...new Set((allStreetsData || []).map(s => s.type).filter(Boolean))].sort();
+    const typeOptions = knownTypes.map(t => `<option value="${t}">${t}</option>`).join('');
+    const typeField = knownTypes.length > 0
+        ? `<select id="f_type">
+              <option value="">-- Không có --</option>
+              ${typeOptions}
+              <option value="__custom__">-- Nhập mới... --</option>
+           </select>
+           <input type="text" id="f_type_custom" placeholder="Nhập loại đường..." style="display:none;margin-top:4px;">`
+        : `<input type="text" id="f_type" placeholder="VD: Đường, Phố, Đại lộ...">`;
+
     openModal(`
         <div class="modal-content">
             <h2>Tạo Street mới</h2>
@@ -130,20 +143,39 @@ function showCreateStreetModal(onCreated) {
                     <input type="text" id="f_name" placeholder="VD: Nguyễn Huệ" required>
                 </label>
                 <label>Loại đường
-                    <input type="text" id="f_type" placeholder="VD: Đường, Phố, Đại lộ...">
+                    ${typeField}
                 </label>
                 <div class="modal-error" id="modalError"></div>
                 <div class="modal-actions">
-                    <button type="button" class="btn-cancel" onclick="closeModal()">Huỷ</button>
+                    <button type="button" class="btn-cancel" id="createStreetCancel">Huỷ</button>
                     <button type="submit" class="btn-submit">Tạo</button>
                 </div>
             </form>
         </div>
     `);
+
+    // Show/hide custom type input
+    const typeSelect = document.getElementById('f_type');
+    const typeCustom = document.getElementById('f_type_custom');
+    if (typeSelect && typeSelect.tagName === 'SELECT') {
+        typeSelect.addEventListener('change', () => {
+            if (typeCustom) typeCustom.style.display = typeSelect.value === '__custom__' ? 'block' : 'none';
+        });
+    }
+
+    document.getElementById('createStreetCancel').addEventListener('click', () => {
+        closeModal();
+        if (typeof onCancel === 'function') try { onCancel(); } catch (_) {}
+    });
+
     document.getElementById('createForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const name = document.getElementById('f_name').value.trim();
-        const type = document.getElementById('f_type').value.trim();
+        const typeEl = document.getElementById('f_type');
+        let type = typeEl ? typeEl.value.trim() : '';
+        if (type === '__custom__') {
+            type = (document.getElementById('f_type_custom')?.value || '').trim();
+        }
         if (!name) return;
         try {
             const street = await apiClient.createStreet(name, districtId, cityId, type || null);
