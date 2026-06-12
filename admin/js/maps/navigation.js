@@ -179,6 +179,12 @@ function showCreateStreetModal(onCreated, onCancel) {
         if (!name) return;
         try {
             const street = await apiClient.createStreet(name, districtId, cityId, type || null);
+            // Inject into allStreetsData immediately so showSaveAllModal can find it
+            if (typeof allStreetsData !== 'undefined' && Array.isArray(allStreetsData)) {
+                if (!allStreetsData.find(s => s.id === street.id)) {
+                    allStreetsData.push(street);
+                }
+            }
             closeModal();
             await loadStreets(districtId, cityId);
             document.getElementById('Streets').value = street.id;
