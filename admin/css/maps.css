@@ -25,7 +25,7 @@ h1 {
 
 .gallery {
     display: grid;
-    grid-template-columns: repeat(23, 400px);
+    grid-template-columns: repeat(23, 800px);
     gap: 0;
     width: 100%;
     opacity: 0.5;
