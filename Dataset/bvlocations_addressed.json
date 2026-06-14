@@ -1,48 +1,8 @@
 [
   {
-    "name": "Trung Tâm Y Khoa Diag",
-    "latitude": 10.829389,
-    "longitude": 106.681626,
-    "strings_found": [
-      "Trung Tâm Y Khoa Diag"
-    ]
-  },
-  {
-    "name": "Trung Tâm Y Khoa Diag",
-    "latitude": 10.799748,
-    "longitude": 106.669596,
-    "strings_found": [
-      "Trung Tâm Y Khoa Diag"
-    ]
-  },
-  {
-    "name": "Trung Tâm Y Khoa Diag - Cách Mạng Tháng 8",
-    "latitude": 10.791971,
-    "longitude": 106.655432,
-    "strings_found": [
-      "Trung Tâm Y Khoa Diag - Cách Mạng Tháng 8"
-    ]
-  },
-  {
-    "name": "Phòng chờ xe Hải Vân Limousine Hồ Chí Minh - Vũng Tàu",
-    "latitude": 10.769824,
-    "longitude": 106.700088,
-    "strings_found": [
-      "Phòng chờ xe Hải Vân Limousine Hồ Chí Minh - Vũng Tàu"
-    ]
-  },
-  {
-    "name": "Diag Laboratories",
-    "latitude": 10.818625,
-    "longitude": 106.678662,
-    "strings_found": [
-      "Diag Laboratories"
-    ]
-  },
-  {
     "name": "Tan Binh Hospital | Tan Son Nhat | Tan Binh Hospital, 605 Đ. Hoàng Văn Thụ, Tân Sơn Nhất, Hồ Chí Minh 70000, Vietnam | 605 Đ. Hoàng Văn Thụ, Tân Sơn Nhất, Hồ Chí Minh 70000, Vietnam | Bệnh Viện Đa Khoa Tân Bình | Ho Chi Minh, Vietnam",
-    "latitude": 10.7945055,
-    "longitude": 106.65498559999999,
+    "lat": 10.7945055,
+    "long": 106.65498559999999,
     "strings_found": [
       "Tan Binh Hospital",
       "Tan Son Nhat",
@@ -52,8 +12,8 @@
   },
   {
     "name": "Thong Nhat Hospital | Tan Son Nhat | Thong Nhat Hospital, 1 Đ. Lý Thường Kiệt, Tân Sơn Nhất, Hồ Chí Minh 700000, Vietnam | 1 Đ. Lý Thường Kiệt, Tân Sơn Nhất, Hồ Chí Minh 700000, Vietnam | Bệnh viện Thống Nhất | Ho Chi Minh, Vietnam",
-    "latitude": 10.7915459,
-    "longitude": 106.65347419999999,
+    "lat": 10.7915459,
+    "long": 106.65347419999999,
     "strings_found": [
       "Thong Nhat Hospital",
       "Tan Son Nhat",
@@ -63,8 +23,8 @@
   },
   {
     "name": "Binh Tan District Hospital | Binh Tri Dong | QJ73+86P Binh Tan District Hospital, 809 HL2, Bình Trị Đông, Hồ Chí Minh 100000, Vietnam | QJ73+86P, 809 HL2, Bình Trị Đông, Hồ Chí Minh 100000, Vietnam | Bệnh viện Đa khoa Bình Tân | Ho Chi Minh, Vietnam",
-    "latitude": 10.7643601,
-    "longitude": 106.6032103,
+    "lat": 10.7643601,
+    "long": 106.6032103,
     "strings_found": [
       "Binh Tan District Hospital",
       "Binh Tri Dong",
@@ -74,8 +34,8 @@
   },
   {
     "name": "Tan Phu District Hospital | Tan Phu | Tan Phu District Hospital, 611 Âu Cơ, Tân Phú, Hồ Chí Minh, Vietnam | 611 Âu Cơ, Tân Phú, Hồ Chí Minh, Vietnam | Bệnh Viện Quận Tân Phú | Ho Chi Minh, Vietnam",
-    "latitude": 10.783638,
-    "longitude": 106.6422004,
+    "lat": 10.783638,
+    "long": 106.6422004,
     "strings_found": [
       "Tan Phu District Hospital",
       "Tan Phu",
@@ -85,8 +45,8 @@
   },
   {
     "name": "Tam Tri Saigon General Hospital | Vinh Phuoc Pagoda, Dong Hung Thuan | Tam Tri Saigon General Hospital, 171/3 Trường Chinh, Vinh Phuoc Pagoda, Đông Hưng Thuận, Hồ Chí Minh 71510, Vietnam | 171/3 Trường Chinh, Vinh Phuoc Pagoda, Đông Hưng Thuận, Hồ Chí Minh 71510, Vietnam | BỆNH VIỆN ĐA KHOA TÂM TRÍ SÀI GÒN | Ho Chi Minh, Vietnam",
-    "latitude": 10.831773199999999,
-    "longitude": 106.62182589999999,
+    "lat": 10.831773199999999,
+    "long": 106.62182589999999,
     "strings_found": [
       "Tam Tri Saigon General Hospital",
       "Vinh Phuoc Pagoda, Dong Hung Thuan",
@@ -96,8 +56,8 @@
   },
   {
     "name": "Quoc Anh General Hospital | Tan Tao | Quoc Anh General Hospital, 104 - 110 Đường số 54, Tân Tạo, Hồ Chí Minh, Vietnam | 104 - 110 Đường số 54, Tân Tạo, Hồ Chí Minh, Vietnam | Bệnh Viện Đa Khoa Quốc Ánh | Ho Chi Minh, Vietnam",
-    "latitude": 10.753473399999999,
-    "longitude": 106.5931056,
+    "lat": 10.753473399999999,
+    "long": 106.5931056,
     "strings_found": [
       "Quoc Anh General Hospital",
       "Tan Tao",
@@ -107,8 +67,8 @@
   },
   {
     "name": "International Neurosurgery Hospital (INH) | Phu Thanh | International Neurosurgery Hospital (INH), 65A Đ. Lũy Bán Bích, Phú Thạnh, Hồ Chí Minh, Vietnam | 65A Đ. Lũy Bán Bích, Phú Thạnh, Hồ Chí Minh, Vietnam | Bệnh viện Chuyên Khoa Ngoại Thần Kinh Quốc Tế | Ho Chi Minh, Vietnam",
-    "latitude": 10.7612331,
-    "longitude": 106.63213739999999,
+    "lat": 10.7612331,
+    "long": 106.63213739999999,
     "strings_found": [
       "International Neurosurgery Hospital (INH)",
       "Phu Thanh",
@@ -118,8 +78,8 @@
   },
   {
     "name": "District 10 Hospital | Hoa Hung | District 10 Hospital, 571 Sư Vạn Hạnh, Hòa Hưng, Hồ Chí Minh, Vietnam | 571 Sư Vạn Hạnh, Hòa Hưng, Hồ Chí Minh, Vietnam | Bệnh viện Quận 10 | Ho Chi Minh, Vietnam",
-    "latitude": 10.7762318,
-    "longitude": 106.6666796,
+    "lat": 10.7762318,
+    "long": 106.6666796,
     "strings_found": [
       "District 10 Hospital",
       "Hoa Hung",
@@ -129,8 +89,8 @@
   },
   {
     "name": "Hyvong Hospital | Phu Tho Hoa | QJQH+X8F Hyvong Hospital, Phú Thọ Hòa, Hồ Chí Minh, Vietnam | QJQH+X8F, Phú Thọ Hòa, Hồ Chí Minh, Vietnam | Ho Chi Minh, Vietnam",
-    "latitude": 10.789941599999999,
-    "longitude": 106.6283078,
+    "lat": 10.789941599999999,
+    "long": 106.6283078,
     "strings_found": [
       "Hyvong Hospital",
       "Phu Tho Hoa"
@@ -139,8 +99,8 @@
   },
   {
     "name": "Tam Anh Hospital - HCMC | Tan Son Hoa | Tam Anh Hospital - HCMC, 2B Đ. Phổ Quang, Tân Sơn Hòa, Hồ Chí Minh 700000, Vietnam | 2B Đ. Phổ Quang, Tân Sơn Hòa, Hồ Chí Minh 700000, Vietnam | Bệnh viện Đa khoa Tâm Anh | Ho Chi Minh, Vietnam",
-    "latitude": 10.802484999999999,
-    "longitude": 106.6660436,
+    "lat": 10.802484999999999,
+    "long": 106.6660436,
     "strings_found": [
       "Tam Anh Hospital - HCMC",
       "Tan Son Hoa",
@@ -150,8 +110,8 @@
   },
   {
     "name": "Binh Phu Hospital | Binh Phu | Binh Phu Hospital, 2D Đ. Chợ Lớn, Bình Phú, Hồ Chí Minh, Vietnam | 2D Đ. Chợ Lớn, Bình Phú, Hồ Chí Minh, Vietnam | Bệnh viện đa khoa Bình Phú | Ho Chi Minh, Vietnam",
-    "latitude": 10.746539199999999,
-    "longitude": 106.6345087,
+    "lat": 10.746539199999999,
+    "long": 106.6345087,
     "strings_found": [
       "Binh Phu Hospital",
       "Binh Phu",
@@ -161,8 +121,8 @@
   },
   {
     "name": "Cho Ray Hospital | Cho Lon | Cho Ray Hospital, 201B Nguyễn Chí Thanh, Chợ Lớn, Hồ Chí Minh 700000, Vietnam | 201B Nguyễn Chí Thanh, Chợ Lớn, Hồ Chí Minh 700000, Vietnam | Bệnh viện Chợ Rẫy | Ho Chi Minh, Vietnam",
-    "latitude": 10.7578646,
-    "longitude": 106.6595131,
+    "lat": 10.7578646,
+    "long": 106.6595131,
     "strings_found": [
       "Cho Ray Hospital",
       "Cho Lon",
@@ -172,8 +132,8 @@
   },
   {
     "name": "Khoa Đông Y | Phu Tho Hoa | Khoa Đông Y, 370, Phú Thọ Hòa, Hồ Chí Minh, Vietnam | 370, Phú Thọ Hòa, Hồ Chí Minh, Vietnam | Ho Chi Minh, Vietnam",
-    "latitude": 10.785466099999999,
-    "longitude": 106.6247882,
+    "lat": 10.785466099999999,
+    "long": 106.6247882,
     "strings_found": [
       "Khoa Đông Y",
       "Phu Tho Hoa"
@@ -182,8 +142,8 @@
   },
   {
     "name": "Bệnh viện Đa khoa Lãnh Binh Thăng | Binh Thoi | Bệnh viện Đa khoa Lãnh Binh Thăng, 72 Đường Số 5 - Cư xá Bình Thới, Bình Thới, Hồ Chí Minh, Vietnam | 72 Đường Số 5 - Cư xá Bình Thới, Bình Thới, Hồ Chí Minh, Vietnam | Ho Chi Minh, Vietnam",
-    "latitude": 10.7605706,
-    "longitude": 106.64812119999999,
+    "lat": 10.7605706,
+    "long": 106.64812119999999,
     "strings_found": [
       "Bệnh viện Đa khoa Lãnh Binh Thăng",
       "Binh Thoi"
@@ -192,8 +152,8 @@
   },
   {
     "name": "Bệnh Viện Đa Khoa Quốc Tế Nam Sài Gòn | Khu dân cư Trung Sơn, Binh Hung | Bệnh Viện Đa Khoa Quốc Tế Nam Sài Gòn, 88 Đường Số 8, Khu dân cư Trung Sơn, Bình Hưng, Hồ Chí Minh, Vietnam | 88 Đường Số 8, Khu dân cư Trung Sơn, Bình Hưng, Hồ Chí Minh, Vietnam | Ho Chi Minh, Vietnam",
-    "latitude": 10.735866099999999,
-    "longitude": 106.69086709999999,
+    "lat": 10.735866099999999,
+    "long": 106.69086709999999,
     "strings_found": [
       "Bệnh Viện Đa Khoa Quốc Tế Nam Sài Gòn",
       "Khu dân cư Trung Sơn, Binh Hung"
@@ -202,8 +162,8 @@
   },
   {
     "name": "Hoan My Sai Gon General Hospital | Phường, Cau Kieu | Hoan My Sai Gon General Hospital, 60-60A, Phan Xích Long/số mới/295 Cầu Kiệu, Phường, Cầu Kiệu, Hồ Chí Minh, Vietnam | 60-60A, Phan Xích Long/số mới/295 Cầu Kiệu, Phường, Cầu Kiệu, Hồ Chí Minh, Vietnam | Bệnh viện Đa Khoa Hoàn Mỹ Sài Gòn | Ho Chi Minh, Vietnam",
-    "latitude": 10.800158699999999,
-    "longitude": 106.684242,
+    "lat": 10.800158699999999,
+    "long": 106.684242,
     "strings_found": [
       "Hoan My Sai Gon General Hospital",
       "Phường, Cau Kieu",
@@ -213,8 +173,8 @@
   },
   {
     "name": "Tan Phu District Hospital | Phu Thanh | Tan Phu District Hospital, 34 Đ. Trần Văn Giáp, Phú Thạnh, Hồ Chí Minh, Vietnam | 34 Đ. Trần Văn Giáp, Phú Thạnh, Hồ Chí Minh, Vietnam | Bệnh viện Quận Tân Phú | Ho Chi Minh, Vietnam",
-    "latitude": 10.7764927,
-    "longitude": 106.6309747,
+    "lat": 10.7764927,
+    "long": 106.6309747,
     "strings_found": [
       "Tan Phu District Hospital",
       "Phu Thanh",
@@ -224,8 +184,8 @@
   },
   {
     "name": "Mỹ Đức General Hospital | Tan Binh | Mỹ Đức General Hospital, 4 Đ. Núi Thành, Tân Bình, Hồ Chí Minh 70000, Vietnam | 4 Đ. Núi Thành, Tân Bình, Hồ Chí Minh 70000, Vietnam | Bệnh viện Đa khoa Mỹ Đức | Ho Chi Minh, Vietnam",
-    "latitude": 10.7999169,
-    "longitude": 106.6415827,
+    "lat": 10.7999169,
+    "long": 106.6415827,
     "strings_found": [
       "Mỹ Đức General Hospital",
       "Tan Binh",
@@ -235,8 +195,8 @@
   },
   {
     "name": "Bệnh viện Đa khoa Việt Mỹ tại 655-657-659 Lạc Long Quân | Bay Hien | Bệnh viện Đa khoa Việt Mỹ tại 655-657-659 Lạc Long Quân, Lạc Long Quân, Bảy Hiền, Hồ Chí Minh 70000, Vietnam | Lạc Long Quân, Bảy Hiền, Hồ Chí Minh 70000, Vietnam | Ho Chi Minh, Vietnam",
-    "latitude": 10.7800146,
-    "longitude": 106.6498295,
+    "lat": 10.7800146,
+    "long": 106.6498295,
     "strings_found": [
       "Bệnh viện Đa khoa Việt Mỹ tại 655-657-659 Lạc Long Quân",
       "Bay Hien"
@@ -245,8 +205,8 @@
   },
   {
     "name": "Trung tâm y tế quận Tân Phú | Phu Tho Hoa | Trung tâm y tế quận Tân Phú, 83/1 Đ. Vườn Lài, Phú Thọ Hòa, Hồ Chí Minh, Vietnam | 83/1 Đ. Vườn Lài, Phú Thọ Hòa, Hồ Chí Minh, Vietnam | Ho Chi Minh, Vietnam",
-    "latitude": 10.7871291,
-    "longitude": 106.6334301,
+    "lat": 10.7871291,
+    "long": 106.6334301,
     "strings_found": [
       "Trung tâm y tế quận Tân Phú",
       "Phu Tho Hoa"

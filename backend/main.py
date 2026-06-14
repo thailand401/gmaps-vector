@@ -90,6 +90,42 @@ async def health_check():
         raise HTTPException(status_code=500, detail="Database connection failed")
 
 
+@app.get("/api/pois")
+async def list_pois(city_id: Optional[int] = Query(None), district_id: Optional[int] = Query(None)):
+    try:
+        query = supabase.table("Pois").select("id, name, address, type, lat, long, city_id, district_id")
+        if district_id is not None:
+            query = query.eq("district_id", district_id)
+        elif city_id is not None:
+            query = query.eq("city_id", city_id)
+        result = query.order("name").execute()
+        return result.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/pois/{poi_id}")
+async def update_poi(poi_id: int, body: dict = Body(...)):
+    try:
+        return await MapsService.update_poi(poi_id, body)
+    except Exception as e:
+        logger.error(f"Error updating POI {poi_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/pois/bulk")
+async def update_pois_bulk(payload: List[dict] = Body(...)):
+    """Bulk-update POIs.
+    Payload: [{poi_id, lat?, long?, name?, address?, type?}, ...]
+    """
+    try:
+        updated = await MapsService.update_pois_bulk(payload)
+        return {"updated": updated}
+    except Exception as e:
+        logger.error(f"Error updating POIs bulk: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== CATEGORIES ENDPOINTS ====================
 
 @app.get("/api/categories", response_model=List[Category])

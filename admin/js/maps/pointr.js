@@ -140,6 +140,7 @@ function updatePointrPositions() {
     pointrData.forEach(applyPos);
     pointrReload.forEach(applyPos);
     refreshStreetPath();
+    if (typeof updatePoiMarkerPositions === 'function') updatePoiMarkerPositions();
 }
 
 // ==================== STREET PATH ====================
@@ -690,11 +691,14 @@ function showSaveAllModal() {
         pointrsList.push({ id: data.id, name, lat: data.lat, lon: data.lon, streets, dbId: data.dbId || null });
     });
 
-    if (pointrsList.length === 0) {
+    // Edited POIs queued for bulk update (poi.js owns this list)
+    const poisList = (typeof getEditedPoisForSave === 'function') ? getEditedPoisForSave() : [];
+
+    if (pointrsList.length === 0 && poisList.length === 0) {
         openModal(`
             <div class="modal-content">
                 <h2>Save Pointrs</h2>
-                <div class="modal-context">Không có Pointr nào cần lưu (hoặc chưa được gán street).</div>
+                <div class="modal-context">Không có Pointr/POI nào cần lưu.</div>
                 <div class="modal-actions">
                     <button type="button" class="btn-cancel" onclick="closeModal()">Đóng</button>
                 </div>
@@ -703,14 +707,29 @@ function showSaveAllModal() {
         return;
     }
 
-    let html = `<div class="modal-content"><h2>Save Pointrs</h2><div class="modal-context">Danh sách Pointr sẽ được lưu:</div><ul style="margin:8px 0 0 18px;font-size:12px;">`;
-    pointrsList.forEach(pt => {
-        const streetNames = pt.streets
-            .map(sid => (typeof allStreetsData !== 'undefined' ? allStreetsData : []).find(s => s.id === sid)?.name)
-            .filter(Boolean).join(' - ');
-        html += `<li style="margin:4px 0">${escapeHtml(pt.name)} <span style="color:#777;font-size:11px;margin-left:6px">[${escapeHtml(streetNames)}]</span> <span style="color:#777;font-size:11px;margin-left:6px">(#${pt.id}${pt.dbId ? ' ✏️ update' : ' 🆕 new'})</span></li>`;
-    });
-    html += `</ul><div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal()">Đóng</button><button type="button" class="btn-submit" id="confirmSaveAll">Confirm</button></div></div>`;
+    let html = `<div class="modal-content"><h2>Save Pointrs</h2>`;
+
+    if (pointrsList.length > 0) {
+        html += `<div class="modal-context">Pointrs (${pointrsList.length}):</div><ul style="margin:8px 0 0 18px;font-size:12px;">`;
+        pointrsList.forEach(pt => {
+            const streetNames = pt.streets
+                .map(sid => (typeof allStreetsData !== 'undefined' ? allStreetsData : []).find(s => s.id === sid)?.name)
+                .filter(Boolean).join(' - ');
+            html += `<li style="margin:4px 0">${escapeHtml(pt.name)} <span style="color:#777;font-size:11px;margin-left:6px">[${escapeHtml(streetNames)}]</span> <span style="color:#777;font-size:11px;margin-left:6px">(#${pt.id}${pt.dbId ? ' ✏️ update' : ' 🆕 new'})</span></li>`;
+        });
+        html += `</ul>`;
+    }
+
+    if (poisList.length > 0) {
+        html += `<div class="modal-context" style="margin-top:12px;">POIs (${poisList.length}):</div><ul style="margin:8px 0 0 18px;font-size:12px;">`;
+        poisList.forEach(p => {
+            html += `<li style="margin:4px 0">${escapeHtml(p.name || ('POI #' + p.poi_id))} <span style="color:#777;font-size:11px;margin-left:6px">[${p.lat.toFixed(6)}, ${p.long.toFixed(6)}]</span> <span style="color:#777;font-size:11px;margin-left:6px">(#${p.poi_id} ✏️ update)</span></li>`;
+        });
+        html += `</ul>`;
+    }
+
+    html += `<div class="modal-error" id="modalError" style="margin-top:8px;"></div>`;
+    html += `<div class="modal-actions"><button type="button" class="btn-cancel" onclick="closeModal()">Đóng</button><button type="button" class="btn-submit" id="confirmSaveAll">Confirm</button></div></div>`;
 
     openModal(html);
 
@@ -731,76 +750,77 @@ function showSaveAllModal() {
             });
 
         console.log('positions bulk payload:', JSON.stringify(payload));
-        if (payload.length === 0) {
-            alert('No valid points to save.');
-            confirmBtn.disabled = false;
-            confirmBtn.textContent = 'Confirm';
-            return;
-        }
 
         try {
             const _apiBaseBulk = location.hostname === 'localhost' ? 'http://localhost:4000/api' : '/api';
-            const resp = await fetch(`${_apiBaseBulk}/positions/bulk`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' },
-                body: JSON.stringify(payload)
-            });
-            if (!resp.ok) {
-                const txt = await resp.text();
-                throw new Error(txt || 'Server error');
-            }
-            const result = await resp.json();
-            // result.created is expected to be an array of created/updated DB rows
-            const created = result.created || result;
 
-            // Build lat/lon → server row lookup for dbId assignment
-            const latLonToServer = new Map();
-            if (Array.isArray(created)) {
-                created.forEach(pos => {
-                    const lat = parseFloat(pos.lat ?? pos.y);
-                    const lon = parseFloat(pos.long ?? pos.x);
-                    if (!isNaN(lat) && !isNaN(lon)) {
-                        latLonToServer.set(`${lat.toFixed(9)},${lon.toFixed(9)}`, pos);
+            // 1) Save pointrs (if any)
+            if (payload.length > 0) {
+                const resp = await fetch(`${_apiBaseBulk}/positions/bulk`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' },
+                    body: JSON.stringify(payload)
+                });
+                if (!resp.ok) {
+                    const txt = await resp.text();
+                    throw new Error(txt || 'Server error');
+                }
+                const result = await resp.json();
+                const created = result.created || result;
+
+                // Build lat/lon → server row lookup for dbId assignment
+                const latLonToServer = new Map();
+                if (Array.isArray(created)) {
+                    created.forEach(pos => {
+                        const lat = parseFloat(pos.lat ?? pos.y);
+                        const lon = parseFloat(pos.long ?? pos.x);
+                        if (!isNaN(lat) && !isNaN(lon)) {
+                            latLonToServer.set(`${lat.toFixed(9)},${lon.toFixed(9)}`, pos);
+                        }
+                    });
+                }
+
+                pointrsList.forEach(pt => {
+                    const data = pointrData.get(pt.id);
+                    if (!data) return;
+                    const key = `${Number(pt.lat).toFixed(9)},${Number(pt.lon).toFixed(9)}`;
+                    const pos = latLonToServer.get(key);
+                    if (pos) {
+                        data.dbId = pos.id;
+                        data.streets = Array.isArray(pos.streets) ? pos.streets : (data.streets || []);
+                        const sp = streetPointsList.find(p => p.id === pt.id);
+                        if (sp) {
+                            sp.streetId = data.streets[0] ?? sp.streetId;
+                            sp.ban      = pos.ban      ?? sp.ban;
+                            sp.speed    = pos.speed    ?? sp.speed;
+                            sp.park     = pos.park     ?? sp.park;
+                            sp.lane     = pos.lane     ?? sp.lane;
+                            sp.toll     = pos.tool     ?? sp.toll;
+                            sp.flooding = pos.flooding ?? sp.flooding;
+                        }
+                    } else if (pt.dbId) {
+                        data.dbId = pt.dbId;
                     }
+
+                    if (data.dbId) renderedDbIds.add(data.dbId);
+                    pointrReload.set(pt.id, data);
+                    pointrData.delete(pt.id);
+                    if (data.element) data.element.classList.add('pointr-reload');
                 });
             }
 
-            // Move ALL saved pointrs from pointrData → pointrReload using pointrsList
-            // (pointrsList was captured at modal-open, so its ids are reliable even if server
-            //  response lat/lon precision differs)
-            pointrsList.forEach(pt => {
-                const data = pointrData.get(pt.id);
-                if (!data) return; // already moved or deleted
-
-                // Try to update dbId / metadata from server response via lat/lon key
-                const key = `${Number(pt.lat).toFixed(9)},${Number(pt.lon).toFixed(9)}`;
-                const pos = latLonToServer.get(key);
-                if (pos) {
-                    data.dbId = pos.id;
-                    data.streets = Array.isArray(pos.streets) ? pos.streets : (data.streets || []);
-                    const sp = streetPointsList.find(p => p.id === pt.id);
-                    if (sp) {
-                        sp.streetId = data.streets[0] ?? sp.streetId;
-                        sp.ban      = pos.ban      ?? sp.ban;
-                        sp.speed    = pos.speed    ?? sp.speed;
-                        sp.park     = pos.park     ?? sp.park;
-                        sp.lane     = pos.lane     ?? sp.lane;
-                        sp.toll     = pos.tool     ?? sp.toll;
-                        sp.flooding = pos.flooding ?? sp.flooding;
-                    }
-                } else if (pt.dbId) {
-                    // Was an update — keep existing dbId
-                    data.dbId = pt.dbId;
-                }
-
-                if (data.dbId) renderedDbIds.add(data.dbId);
-                pointrReload.set(pt.id, data);
-                pointrData.delete(pt.id);
-                if (data.element) data.element.classList.add('pointr-reload');
-            });
+            // 2) Save POIs (if any)
+            let poiSavedCount = 0;
+            if (poisList.length > 0 && typeof savePoisBulk === 'function') {
+                const poiRes = await savePoisBulk();
+                poiSavedCount = poiRes.saved || 0;
+            }
 
             closeModal();
-            alert('Saved positions successfully.');
+            const parts = [];
+            if (payload.length > 0) parts.push(`${payload.length} pointr(s)`);
+            if (poiSavedCount > 0)  parts.push(`${poiSavedCount} POI(s)`);
+            alert('Saved ' + (parts.join(' + ') || 'nothing') + ' successfully.');
         } catch (err) {
             console.error(err);
             const errEl = document.getElementById('modalError');
@@ -1041,6 +1061,11 @@ function initKeyboardListener() {
             if (editor.value === 'move' && activePointrId) {
                 movePointr(e.key);
                 e.preventDefault();
+            } else if (editor.value === 'move'
+                       && typeof activePoiId !== 'undefined' && activePoiId != null
+                       && typeof movePoi === 'function') {
+                movePoi(e.key);
+                e.preventDefault();
             }
         }
         if (e.key === 'Delete' && selectedPointrIds.size > 0) {
@@ -1087,7 +1112,13 @@ function initEditorListener() {
         _applyEditorCursor(e.target.value);
         activePointrId = null;
         updateActivePointrVisual();
+        if (typeof activePoiId !== 'undefined') {
+            activePoiId = null;
+            if (typeof updateActivePoiVisual === 'function') updateActivePoiVisual();
+        }
     });
     // Apply initial cursor on load
     _applyEditorCursor(editor.value);
+    // Also set body class so CSS mode-specific selectors apply on first render
+    document.body.className = `mode-${editor.value}`;
 }

@@ -381,6 +381,61 @@ h1 {
     text-overflow: ellipsis;
 }
 
+/* ==================== POI MARKERS ==================== */
+
+.poi-marker {
+    position: fixed;
+    transform: translate(-50%, -100%);
+    z-index: 60;
+    pointer-events: auto;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+body.mode-move .poi-marker { cursor: grab; }
+body.mode-move .poi-marker.active,
+body.mode-move .poi-marker:active { cursor: grabbing; }
+
+.poi-marker-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #9C27B0;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.poi-marker.active .poi-marker-dot {
+    transform: scale(1.4);
+    box-shadow: 0 0 0 3px rgba(33,150,243,0.6), 0 1px 6px rgba(0,0,0,0.4);
+}
+
+.poi-marker.poi-edited .poi-marker-dot {
+    background: #FF9800;
+    box-shadow: 0 0 0 2px rgba(255,152,0,0.4), 0 1px 4px rgba(0,0,0,0.4);
+}
+
+.poi-marker.poi-edited .poi-marker-label {
+    background: rgba(255,152,0,0.9);
+}
+
+.poi-marker-label {
+    margin-top: 2px;
+    background: rgba(156,39,176,0.85);
+    color: #fff;
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    white-space: nowrap;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
 /* ==================== SEARCH ==================== */
 
 .search-btn {

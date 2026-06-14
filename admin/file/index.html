@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tải ứng dụng — Diana Maps</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            padding: 20px;
+        }
+        .card {
+            background: rgba(255,255,255,0.12);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 16px;
+            padding: 40px 32px;
+            max-width: 380px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+        }
+        .logo {
+            font-size: 56px;
+            margin-bottom: 12px;
+        }
+        h1 { font-size: 22px; margin-bottom: 6px; font-weight: 600; }
+        p.sub { font-size: 13px; opacity: 0.85; margin-bottom: 24px; }
+        .download-btn {
+            display: inline-block;
+            background: #fff;
+            color: #5a3aa0;
+            padding: 14px 28px;
+            border-radius: 10px;
+            font-weight: 600;
+            text-decoration: none;
+            font-size: 15px;
+            transition: transform 0.15s, box-shadow 0.15s;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+        }
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        }
+        .meta {
+            margin-top: 20px;
+            font-size: 12px;
+            opacity: 0.7;
+        }
+        .note {
+            margin-top: 20px;
+            padding: 12px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.5;
+            text-align: left;
+        }
+        .note strong { display: block; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">📱</div>
+        <h1>Diana Maps</h1>
+        <p class="sub">Ứng dụng Android</p>
+        <a href="app.apk" class="download-btn" download>⬇️ Tải APK</a>
+        <div class="meta">Phiên bản APK · ~8.5 MB</div>
+        <div class="note">
+            <strong>Hướng dẫn cài đặt:</strong>
+            1. Tải file APK về điện thoại<br>
+            2. Mở file, cho phép "Cài từ nguồn không xác định"<br>
+            3. Nhấn Cài đặt
+        </div>
+    </div>
+</body>
+</html>

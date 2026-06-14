@@ -76,6 +76,10 @@ function initSettings() {
         refreshStreetPath();
     });
 
+    document.getElementById('sIsPoi').addEventListener('change', () => {
+        renderPois();
+    });
+
     document.getElementById('settingsSave').addEventListener('click', () => {
         const items = parseInt(document.getElementById('sItems').value) || 23;
         const newSize = parseInt(document.getElementById('sSize').value) || 400;

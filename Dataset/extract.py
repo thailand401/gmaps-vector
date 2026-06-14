@@ -17,44 +17,119 @@ def is_useful_string(s):
     if s.startswith('http://') or s.startswith('https://') or 'http' in s.lower():
         return False
     if s.startswith('/') and len(s) > 1 and (s[1].isalpha() or s[1:].startswith('g/')):
-        # Skip paths like /g/11cnd5xdhm
         return False
     
     # Skip locale/timezone (Asia/Saigon, vi, en, VN, English, etc)
     locale_patterns = [
-        r'^[a-z]{2}$',  # language codes like 'vi', 'en'
-        r'^[A-Z]{2}$',  # country codes like 'VN'
-        r'^[A-Z][a-z]+$',  # English, Chinese, etc
-        r'^[A-Za-z]+/[A-Za-z_]+$',  # timezone like 'Asia/Saigon'
+        r'^[a-z]{2}$',
+        r'^[A-Z]{2}$',
+        r'^[A-Z][a-z]+$',
+        r'^[A-Za-z]+/[A-Za-z_]+$',
     ]
     for pattern in locale_patterns:
         if re.match(pattern, s):
             return False
     
-    # Skip pure numbers (including floats and large numbers)
+    # Skip pure numbers
     if re.match(r'^-?\d+(\.\d+)?$', s):
         return False
     
-    # Skip hex codes (0x... or 0x...:0x...)
+    # Skip hex codes
     if re.match(r'^0x[0-9a-fA-F:]+$', s):
         return False
     
-    # Skip hash-like strings (long alphanumeric with special chars like colons/dashes)
-    # Google place IDs and similar
+    # Skip hash-like strings
     if re.match(r'^[0-9a-zA-Z_-]+:[0-9a-zA-Z_-]+$', s):
         return False
     
-    # Skip long base64-like or encoded strings (50+ chars of alphanumeric+/+=)
+    # Skip long base64-like encoded strings
     if re.match(r'^[A-Za-z0-9+/=_-]{50,}$', s):
         return False
     
-    # Skip strings that look like tokens (20+ chars of alphanumeric+special)
-    if len(s) > 20 and not ' ' in s:
+    # Skip tokens
+    if len(s) > 20 and ' ' not in s:
         if re.match(r'^[A-Za-z0-9_-]{20,}$', s):
             return False
     
-    # If it passes all filters, it's useful
     return True
+
+
+def _count_address_criteria(s):
+    """Count how many address criteria the string matches."""
+    count = 0
+
+    # 1. number: house/street number at start or after comma/space, or Google Plus code
+    if re.search(r'(^|[\s,])\d[\dA-Za-z\-/]*[\s,]', s) or re.match(r'^[A-Z0-9]{4}\+[A-Z0-9]{2,}', s):
+        count += 1
+
+    # 2. street name keywords (Vietnamese + English)
+    street_kw = [
+        r'\bĐ\.', r'\bĐường\b', r'\bPhố\b', r'\bHẻm\b', r'\bNgõ\b',
+        r'\bNgách\b', r'\bLộ\b', r'\bHL\d',
+        r'\bStreet\b', r'\bSt\.', r'\bAvenue\b', r'\bAve\b',
+        r'\bRoad\b', r'\bRd\.', r'\bBlvd\b', r'\bLane\b',
+    ]
+    if any(re.search(p, s, re.IGNORECASE) for p in street_kw):
+        count += 1
+
+    # 3. district/ward keywords
+    district_kw = [r'\bPhường\b', r'\bQuận\b', r'\bHuyện\b',
+                   r'\bThị\s+[Xx]ã\b', r'\bThị\s+[Tt]rấn\b']
+    if any(re.search(p, s) for p in district_kw):
+        count += 1
+
+    # 4. city names
+    city_kw = [r'\bHồ\s+Chí\s+Minh\b', r'\bHo\s+Chi\s+Minh\b',
+               r'\bHà\s+Nội\b', r'\bHanoi\b', r'\bĐà\s+Nẵng\b', r'\bDa\s+Nang\b']
+    if any(re.search(p, s, re.IGNORECASE) for p in city_kw):
+        count += 1
+
+    # 5. country
+    if re.search(r'\bVietnam\b|\bViệt\s+Nam\b', s, re.IGNORECASE):
+        count += 1
+
+    # 6. postcode: standalone 5-6 digit number
+    if re.search(r'(?<!\d)\d{5,6}(?!\d)', s):
+        count += 1
+
+    return count
+
+
+def is_address_string(s):
+    """A string is an address if it matches at least 2 address criteria."""
+    return _count_address_criteria(s) >= 2
+
+def format_address(addr):
+    """Clean address string: split by comma, remove Plus Code parts, remove postcode, remove 'Đ.'"""
+    if not addr:
+        return addr
+    parts = [p.strip() for p in addr.split(',')]
+    cleaned = []
+    for part in parts:
+        # Skip Google Plus Code parts (e.g. "QJ73+86P", "QJQH+X8F")
+        if re.match(r'^[A-Z0-9]{4}\+[A-Z0-9]{2,}(\s.*)?$', part):
+            continue
+        # Remove postcode (standalone 5-6 digit number within part)
+        part = re.sub(r'\b\d{5,6}\b', '', part).strip().strip(',').strip()
+        # Remove "Đ." prefix on street names
+        part = re.sub(r'\bĐ\.\s*', '', part).strip()
+        if part:
+            cleaned.append(part)
+    return ', '.join(cleaned)
+
+
+def pick_best_address(addresses):
+    """Pick best address: if 3 items → middle by length; if 2 → longest; if 1 → that one."""
+    if not addresses:
+        return None
+    if len(addresses) == 1:
+        return addresses[0]
+    if len(addresses) == 2:
+        return max(addresses, key=len)
+    # 3+ items: sort by length, pick the middle one
+    sorted_by_len = sorted(addresses, key=len)
+    return sorted_by_len[len(sorted_by_len) // 2]
+
 
 def extract_locations(data, parent=None, parent_index=None):
     """Recursively traverse JSON and find location arrays"""
@@ -71,12 +146,18 @@ def extract_locations(data, parent=None, parent_index=None):
                         name = " | ".join(strings_in_parent)
                         lat = item[2]
                         lon = item[3]
-                        results.append({
+                        # Classify: strings with >=2 address criteria go to "address"
+                        address = [s for s in strings_in_parent if is_address_string(s)]
+                        other   = [s for s in strings_in_parent if not is_address_string(s)]
+                        entry = {
                             "name": name,
                             "latitude": lat,
                             "longitude": lon,
-                            "strings_found": strings_in_parent
-                        })
+                            "strings_found": other,
+                        }
+                        if address:
+                            entry["address"] = format_address(pick_best_address(address))
+                        results.append(entry)
             # Recurse into nested structures
             results.extend(extract_locations(item, parent=data, parent_index=i))
     
@@ -103,3 +184,10 @@ for loc in locations[:10]:  # Show first 10
 
 if len(locations) > 10:
     print(f"  ... and {len(locations) - 10} more")
+
+# Save items with address to a separate file
+with_address = [loc for loc in locations if loc.get('address')]
+with open("bvlocations_addressed.json", "w", encoding="utf-8") as f:
+    json.dump(with_address, f, ensure_ascii=False, indent=2)
+
+print(f"\nItems with address: {len(with_address)} → bvlocations_addressed.json")

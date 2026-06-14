@@ -451,6 +451,45 @@ class MapsService:
             raise Exception(f"Failed to create/update positions bulk: {str(e)}")
 
     @staticmethod
+    async def update_poi(poi_id: int, fields: dict) -> dict:
+        """Update a single Pois row with the provided fields (lat/long/name/address/type).
+        Returns the updated row.
+        """
+        try:
+            allowed = {"lat", "long", "name", "address", "type", "city_id", "district_id"}
+            payload = {k: v for k, v in (fields or {}).items() if k in allowed and v is not None}
+            if not payload:
+                raise Exception("No valid fields to update")
+            result = supabase.table("Pois").update(payload).eq("id", poi_id).execute()
+            if not result.data:
+                raise Exception(f"POI #{poi_id} not found or update failed")
+            return result.data[0]
+        except Exception as e:
+            raise Exception(f"Failed to update POI: {str(e)}")
+
+    @staticmethod
+    async def update_pois_bulk(payload: list) -> list:
+        """payload: [{poi_id, lat?, long?, name?, address?, type?}, ...]
+        Updates each POI by id. Returns list of updated rows.
+        """
+        updated = []
+        allowed = {"lat", "long", "name", "address", "type", "city_id", "district_id"}
+        try:
+            for item in payload or []:
+                poi_id = item.get("poi_id") or item.get("id")
+                if not poi_id:
+                    continue
+                fields = {k: v for k, v in item.items() if k in allowed and v is not None}
+                if not fields:
+                    continue
+                result = supabase.table("Pois").update(fields).eq("id", int(poi_id)).execute()
+                if result.data:
+                    updated.append(result.data[0])
+            return updated
+        except Exception as e:
+            raise Exception(f"Failed to update POIs bulk: {str(e)}")
+
+    @staticmethod
     async def search_nearest(points: list) -> dict:
         """
         1 query point  → return nearest DB position.

@@ -20,6 +20,8 @@ window.addEventListener('load', async () => {
     initSettings();
     initSearch();
     initStreetPanel();
+    await loadPois();
+    initPoiInteractions();
 
     // Test pointr
     const allPointrs = [
