@@ -256,6 +256,15 @@ class ApiClient {
     async deletePosition(positionId) {
         return this.request(`/positions/${positionId}`, { method: 'DELETE' });
     }
+
+    // ==================== PATHFINDER ====================
+
+    async pathfind(startId, endId) {
+        return this.request('/pathfind', {
+            method: 'POST',
+            body: JSON.stringify({ start_id: startId, end_id: endId }),
+        });
+    }
 }
 
 // Global singleton used by app.js

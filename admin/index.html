@@ -37,6 +37,9 @@
                 <button class="nav-btn" data-view="positions">
                     <span class="icon">📍</span> Positions
                 </button>
+                <button class="nav-btn" data-view="pathfinder">
+                    <span class="icon">🔍</span> Pathfinder
+                </button>
             </nav>
             <div class="sidebar-footer">
                 <div class="status-indicator">
@@ -171,6 +174,36 @@
                         <thead id="streetsTableHead"></thead>
                         <tbody id="streetsTableBody"></tbody>
                     </table>
+                </div>
+            </section>
+
+            <!-- Pathfinder View -->
+            <section id="pathfinder" class="view">
+                <div class="view-header">
+                    <h3>A* Pathfinder</h3>
+                    <div class="filter-group">
+                        <button class="btn btn-secondary" id="pathDownloadBtn">⬇ Download position.bin</button>
+                        <button class="btn btn-secondary" id="pathResetBtn">✕ Reset</button>
+                    </div>
+                </div>
+                <div class="pathfinder-panel">
+                    <div class="pathfinder-inputs">
+                        <div class="path-select-group">
+                            <label class="path-label">🟢 Start Position</label>
+                            <input type="text" id="pathStartSearch" class="search-box path-search" placeholder="Filter by id or street...">
+                            <select id="pathStart" class="path-select" size="8"></select>
+                        </div>
+                        <div class="path-arrow">→</div>
+                        <div class="path-select-group">
+                            <label class="path-label">🔴 End Position</label>
+                            <input type="text" id="pathEndSearch" class="search-box path-search" placeholder="Filter by id or street...">
+                            <select id="pathEnd" class="path-select" size="8"></select>
+                        </div>
+                    </div>
+                    <div class="pathfinder-actions">
+                        <button class="btn btn-primary" id="findPathBtn">▶ Find Path</button>
+                    </div>
+                    <div id="pathResult" class="path-result"></div>
                 </div>
             </section>
 

@@ -159,6 +159,25 @@ function initializeEventListeners() {
             }
         });
     });
+
+    // Pathfinder
+    document.getElementById('findPathBtn').addEventListener('click', handleFindPath);
+    document.getElementById('pathResetBtn').addEventListener('click', () => {
+        document.getElementById('pathResult').innerHTML = '';
+        document.getElementById('pathStartSearch').value = '';
+        document.getElementById('pathEndSearch').value = '';
+        populatePathfinderDropdowns('', '');
+    });
+    document.getElementById('pathDownloadBtn').addEventListener('click', () => {
+        const base = API_BASE_URL.replace('/api', '');
+        window.open(base + '/export/position.bin', '_blank');
+    });
+    document.getElementById('pathStartSearch').addEventListener('input', e => {
+        filterPathDropdown('pathStart', e.target.value);
+    });
+    document.getElementById('pathEndSearch').addEventListener('input', e => {
+        filterPathDropdown('pathEnd', e.target.value);
+    });
 }
 
 // Build helper maps
@@ -200,6 +219,7 @@ async function loadAllData() {
 
         // Populate maps filter dropdowns
         populateMapsDropdowns();
+        populatePathfinderDropdowns();
 
         UIComponents.updateStatus(true);
         UIComponents.showToast('Data loaded successfully', 'success');
@@ -239,6 +259,7 @@ function switchView(viewName) {
         districts:  'Districts Management',
         streets:    'Streets Management',
         positions:  'Positions Management',
+        pathfinder: 'A* Pathfinder',
     };
     document.getElementById('viewTitle').textContent = titles[viewName] || 'Dashboard';
 
@@ -883,4 +904,106 @@ function initMatrixRain() {
     rafId = requestAnimationFrame(draw);
 
     return { freeze, unfreeze };
+}
+
+// ==================== PATHFINDER ====================
+
+function _positionLabel(pos) {
+    const streetMap = buildNameMap(appState.streets);
+    const names = (pos.streets || []).map(sid => streetMap[sid] || `#${sid}`).join(', ');
+    return `#${pos.id}${names ? ' — ' + names : ''}`;
+}
+
+function populatePathfinderDropdowns(startFilter = '', endFilter = '') {
+    ['pathStart', 'pathEnd'].forEach((selId, idx) => {
+        const filter = idx === 0 ? startFilter : endFilter;
+        const sel = document.getElementById(selId);
+        if (!sel) return;
+        const cur = sel.value;
+        sel.innerHTML = '';
+        const norm = filter.toLowerCase();
+        appState.positions.forEach(pos => {
+            const label = _positionLabel(pos);
+            if (norm && !label.toLowerCase().includes(norm) && !String(pos.id).includes(norm)) return;
+            const o = document.createElement('option');
+            o.value = pos.id;
+            o.textContent = label;
+            sel.appendChild(o);
+        });
+        if (cur) sel.value = cur;
+    });
+}
+
+function filterPathDropdown(selId, filter) {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '';
+    const norm = filter.toLowerCase();
+    appState.positions.forEach(pos => {
+        const label = _positionLabel(pos);
+        if (norm && !label.toLowerCase().includes(norm) && !String(pos.id).includes(norm)) return;
+        const o = document.createElement('option');
+        o.value = pos.id;
+        o.textContent = label;
+        sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
+}
+
+async function handleFindPath() {
+    const startId = parseInt(document.getElementById('pathStart').value);
+    const endId   = parseInt(document.getElementById('pathEnd').value);
+    const resultDiv = document.getElementById('pathResult');
+
+    if (!startId || !endId) {
+        UIComponents.showToast('Select both start and end positions', 'error');
+        return;
+    }
+
+    resultDiv.innerHTML = '<div class="path-loading">⏳ Running A*...</div>';
+    const btn = document.getElementById('findPathBtn');
+    btn.disabled = true;
+
+    try {
+        const res = await api.pathfind(startId, endId);
+        if (!res.found) {
+            resultDiv.innerHTML = '<div class="path-empty">No path found between these positions.</div>';
+            return;
+        }
+
+        const distText = res.total_m < 1000
+            ? `${res.total_m} m`
+            : `${(res.total_m / 1000).toFixed(2)} km`;
+        const distMap = buildNameMap(appState.districts);
+        const cityMap = buildNameMap(appState.cities);
+
+        let html = `
+            <div class="path-summary">
+                <span class="path-stat">📍 ${res.node_path.length} nodes</span>
+                <span class="path-stat">🛣️ ${res.street_details.length} streets</span>
+                <span class="path-stat">📏 ${distText}</span>
+            </div>
+            <table class="data-table path-table">
+                <thead><tr><th>#</th><th>Street</th><th>Type</th><th>District</th><th>City</th></tr></thead>
+                <tbody>`;
+
+        res.street_details.forEach((s, i) => {
+            html += `<tr>
+                <td>${i + 1}</td>
+                <td>${s.name || '—'}</td>
+                <td>${s.type || '—'}</td>
+                <td>${distMap[s.district_id] || s.district_id || '—'}</td>
+                <td>${cityMap[s.city_id] || s.city_id || '—'}</td>
+            </tr>`;
+        });
+
+        html += `</tbody></table>`;
+        resultDiv.innerHTML = html;
+    } catch (err) {
+        resultDiv.innerHTML = `<div class="path-empty">Error: ${err.message}</div>`;
+        UIComponents.showToast(`Pathfind error: ${err.message}`, 'error');
+    } finally {
+        btn.disabled = false;
+    }
 }

@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from typing import Optional, List
 import logging
 
@@ -524,6 +524,25 @@ async def delete_position_cascade(position_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/pathfind")
+async def pathfind(payload: dict = Body(...)):
+    """A* pathfinding between two position IDs.
+    Body: { start_id: int, end_id: int }
+    Returns: { found, node_path, street_path, street_details, total_m }
+    """
+    try:
+        start_id = payload.get("start_id")
+        end_id = payload.get("end_id")
+        if start_id is None or end_id is None:
+            raise HTTPException(status_code=422, detail="start_id and end_id are required")
+        return await MapsService.pathfind(int(start_id), int(end_id))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Pathfind error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/search")
 async def search_nearest(payload: dict = Body(...)):
     """Find the nearest DB position for each query point.
@@ -539,6 +558,32 @@ async def search_nearest(payload: dict = Body(...)):
         raise
     except Exception as e:
         logger.error(f"Error searching nearest: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== EXPORT ENDPOINTS ====================
+
+@app.get("/export/position.bin")
+async def export_position_bin():
+    """Export the full position graph as a compact binary file for A* pathfinding.
+
+    Format: POSBIN v1 — header (16B) + node ids (4B each) + edges (12B each).
+    Nodes contain id only; client maps back to DB to retrieve lat/lon/name.
+    Edges are undirected (from_id < to_id); client mirrors both directions for A*.
+    """
+    try:
+        data = await MapsService.export_graph_bin()
+        logger.info(f"Exported position.bin: {len(data)} bytes")
+        return Response(
+            content=data,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": 'attachment; filename="position.bin"',
+                "Content-Length": str(len(data)),
+            },
+        )
+    except Exception as e:
+        logger.error(f"Error exporting position.bin: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
