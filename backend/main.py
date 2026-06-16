@@ -561,6 +561,24 @@ async def search_nearest(payload: dict = Body(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== TEST / UTILITY ENDPOINTS ====================
+
+@app.get("/search/uuid")
+async def search_uuid(id: str = Query(..., description="ID string to search for in utest table")):
+    """Search the utest table for the most similar id string.
+    Returns the best-matching row and its normalised Levenshtein score (0.0 = exact).
+    """
+    try:
+        if not id or not id.strip():
+            raise HTTPException(status_code=422, detail="id query param is required")
+        return await MapsService.search_uuid(id.strip())
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"search_uuid error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== EXPORT ENDPOINTS ====================
 
 @app.get("/export/position.bin")

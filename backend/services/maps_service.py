@@ -953,6 +953,60 @@ class MapsService:
             raise Exception(f"Search nearest failed: {str(e)}")
 
     @staticmethod
+    async def search_uuid(query_id: str) -> dict:
+        """Search the utest table for the row whose id is most similar to query_id.
+        Uses Levenshtein distance (normalised) as similarity score.
+        Returns: {found, id, score, row} where score=0.0 is exact match.
+        """
+        def _lev(a: str, b: str) -> int:
+            if a == b:
+                return 0
+            if not a:
+                return len(b)
+            if not b:
+                return len(a)
+            prev = list(range(len(b) + 1))
+            for i, ca in enumerate(a, start=1):
+                curr = [i]
+                for j, cb in enumerate(b, start=1):
+                    curr.append(min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + (0 if ca == cb else 1)))
+                prev = curr
+            return prev[-1]
+
+        try:
+            result = supabase.table("utest").select("*").execute()
+            rows = result.data or []
+            if not rows:
+                return {"found": False, "id": None, "score": None, "row": None}
+
+            q = str(query_id).strip()
+            best_row = None
+            best_score = float("inf")
+
+            for row in rows:
+                row_id = str(row.get("id") or "").strip()
+                if not row_id:
+                    continue
+                dist = _lev(q, row_id)
+                max_len = max(len(q), len(row_id), 1)
+                score = dist / max_len
+                if score < best_score:
+                    best_score = score
+                    best_row = row
+
+            if best_row is None:
+                return {"found": False, "id": None, "score": None, "row": None}
+
+            return {
+                "found": True,
+                "id": best_row.get("id"),
+                "score": round(best_score, 4),
+                "row": best_row,
+            }
+        except Exception as e:
+            raise Exception(f"search_uuid failed: {str(e)}")
+
+    @staticmethod
     async def delete_position_cascade(position_id: int) -> bool:
         """Delete a position and remove its id from any Streets.positions arrays listed in position.streets"""
         try:
