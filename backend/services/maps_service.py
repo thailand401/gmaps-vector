@@ -489,6 +489,218 @@ class MapsService:
         except Exception as e:
             raise Exception(f"Failed to update POIs bulk: {str(e)}")
 
+    # Path where position.bin is cached on disk (backend/position.bin)
+    _BIN_PATH: str = ""
+
+    @classmethod
+    def _bin_path(cls) -> str:
+        if not cls._BIN_PATH:
+            import os
+            cls._BIN_PATH = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), '..', 'position.bin'
+            )
+        return cls._BIN_PATH
+
+    @staticmethod
+    async def export_graph_bin() -> bytes:
+        """Serialize the position graph as a compact binary file for A* pathfinding.
+
+        Format (little-endian):
+          HEADER  (16 bytes): magic b"POSBIN\x01\x00" (8B) | node_count uint32 | edge_count uint32
+          NODES   (4B x node_count): sorted node ids as int32
+          EDGES   (12B x edge_count): from_id int32 | to_id int32 | weight_m float32
+              edges are undirected and stored with from_id < to_id.
+
+        Nodes contain id only — client maps back to DB for lat/lon/name.
+        Also writes the file to disk at backend/position.bin for pathfind() to consume.
+        """
+        import math
+        import struct
+
+        def haversine_m(lat1, lon1, lat2, lon2):
+            R = 6_371_000
+            phi1, phi2 = math.radians(lat1), math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlam = math.radians(lon2 - lon1)
+            a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+        try:
+            result = supabase.table("Positions").select("id, lat, long, streets").execute()
+            all_positions = result.data or []
+
+            # Index valid positions (must have lat and long)
+            pos_by_id: dict = {}
+            for p in all_positions:
+                if p.get("lat") is not None and p.get("long") is not None:
+                    pos_by_id[p["id"]] = p
+
+            # Build street → list of position ids
+            street_to_pids: dict = {}
+            for pid, pos in pos_by_id.items():
+                for sid in (pos.get("streets") or []):
+                    street_to_pids.setdefault(sid, []).append(pid)
+
+            # Build edges: undirected, from_id < to_id, keep minimum weight per pair
+            edge_map: dict = {}  # (from_id, to_id) → weight_m
+            for sid, pids in street_to_pids.items():
+                for i in range(len(pids)):
+                    for j in range(i + 1, len(pids)):
+                        a_id, b_id = pids[i], pids[j]
+                        if a_id > b_id:
+                            a_id, b_id = b_id, a_id
+                        pa = pos_by_id[a_id]
+                        pb = pos_by_id[b_id]
+                        w = haversine_m(
+                            float(pa["lat"]), float(pa["long"]),
+                            float(pb["lat"]), float(pb["long"])
+                        )
+                        key = (a_id, b_id)
+                        if key not in edge_map or w < edge_map[key]:
+                            edge_map[key] = w
+
+            sorted_node_ids = sorted(pos_by_id.keys())
+            edges = [(a, b, w) for (a, b), w in edge_map.items()]
+
+            node_count = len(sorted_node_ids)
+            edge_count = len(edges)
+
+            buf = bytearray()
+            buf += struct.pack('<8sII', b"POSBIN\x01\x00", node_count, edge_count)
+            if node_count:
+                buf += struct.pack(f'<{node_count}i', *sorted_node_ids)
+            for a_id, b_id, w in edges:
+                buf += struct.pack('<iif', a_id, b_id, w)
+
+            data = bytes(buf)
+
+            # Save to disk so pathfind() can consume it without re-fetching DB
+            with open(MapsService._bin_path(), 'wb') as f:
+                f.write(data)
+
+            return data
+        except Exception as e:
+            raise Exception(f"Failed to export graph binary: {str(e)}")
+
+    @staticmethod
+    async def pathfind(start_id: int, end_id: int) -> dict:
+        """Run Dijkstra on the pre-built position graph stored in position.bin.
+
+        Graph is loaded from the binary file (no full DB fetch).
+        Only queries DB for: street arrays of nodes in the found path + street details.
+        Returns node path, ordered street ids, street details, and total distance.
+
+        Requires position.bin to exist — call GET /export/position.bin first to generate it.
+        """
+        import struct
+        import heapq
+        import os
+
+        bin_path = MapsService._bin_path()
+        if not os.path.exists(bin_path):
+            raise Exception(
+                "position.bin not found. Call GET /export/position.bin first to generate the graph file."
+            )
+
+        try:
+            with open(bin_path, 'rb') as f:
+                data = f.read()
+
+            # --- Parse header ---
+            magic, node_count, edge_count = struct.unpack_from('<8sII', data, 0)
+            if magic != b"POSBIN\x01\x00":
+                raise Exception("Invalid position.bin format — unexpected magic bytes")
+
+            # --- Parse node ids ---
+            node_ids: list = list(struct.unpack_from(f'<{node_count}i', data, 16))
+            node_set: set = set(node_ids)
+
+            if start_id not in node_set:
+                raise Exception(f"Start position #{start_id} not found in graph")
+            if end_id not in node_set:
+                raise Exception(f"End position #{end_id} not found in graph")
+            if start_id == end_id:
+                return {"found": True, "node_path": [start_id], "street_path": [], "street_details": [], "total_m": 0}
+
+            # --- Parse edges → build undirected adjacency ---
+            adjacency: dict = {nid: {} for nid in node_ids}
+            edge_offset = 16 + node_count * 4
+            for i in range(edge_count):
+                a, b, w = struct.unpack_from('<iif', data, edge_offset + i * 12)
+                # bin stores from_id < to_id; mirror both directions
+                if b not in adjacency[a] or adjacency[a][b] > w:
+                    adjacency[a][b] = w
+                    adjacency[b][a] = w
+
+            # --- Dijkstra (no lat/lon in bin → no heuristic needed) ---
+            g: dict = {nid: float("inf") for nid in node_ids}
+            g[start_id] = 0.0
+            prev: dict = {nid: None for nid in node_ids}
+            heap = [(0.0, start_id)]
+
+            while heap:
+                cost, u = heapq.heappop(heap)
+                if u == end_id:
+                    break
+                if cost > g[u]:
+                    continue
+                for v, w in adjacency[u].items():
+                    ng = g[u] + w
+                    if ng < g[v]:
+                        g[v] = ng
+                        prev[v] = u
+                        heapq.heappush(heap, (ng, v))
+
+            if g[end_id] == float("inf"):
+                return {"found": False, "node_path": [], "street_path": [], "street_details": [], "total_m": 0}
+
+            # --- Reconstruct node path ---
+            path: list = []
+            cur = end_id
+            while cur is not None:
+                path.append(cur)
+                cur = prev[cur]
+            path.reverse()
+
+            # --- Minimal DB query: only fetch streets array for nodes in path ---
+            pos_result = supabase.table("Positions") \
+                .select("id, streets") \
+                .in_("id", path).execute()
+            pos_streets: dict = {
+                p["id"]: (p.get("streets") or [])
+                for p in (pos_result.data or [])
+            }
+
+            # --- Extract ordered unique street IDs from consecutive node pairs ---
+            street_path: list = []
+            seen_streets: set = set()
+            for i in range(len(path) - 1):
+                shared = (set(pos_streets.get(path[i], [])) &
+                          set(pos_streets.get(path[i + 1], [])))
+                for sid in shared:
+                    if sid not in seen_streets:
+                        seen_streets.add(sid)
+                        street_path.append(sid)
+
+            # --- Fetch street details for the path ---
+            street_details: list = []
+            if street_path:
+                sr = supabase.table("Streets") \
+                    .select("id, name, type, district_id, city_id") \
+                    .in_("id", street_path).execute()
+                street_map = {s["id"]: s for s in (sr.data or [])}
+                street_details = [street_map[sid] for sid in street_path if sid in street_map]
+
+            return {
+                "found": True,
+                "node_path": path,
+                "street_path": street_path,
+                "street_details": street_details,
+                "total_m": round(g[end_id]),
+            }
+        except Exception as e:
+            raise Exception(f"Pathfind failed: {str(e)}")
+
     @staticmethod
     async def search_nearest(points: list) -> dict:
         """
