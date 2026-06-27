@@ -176,8 +176,9 @@ class MapsService:
 
             name_norm = _normalize(data.name)
 
-            # Fetch ALL streets globally to check for duplicates across all districts/cities
-            existing_res = supabase.table("Streets").select("id, name, district_id, city_id").order("name").execute()
+            # Only check duplicates WITHIN THE SAME district -> cho phép cùng tên đường ở phường khác.
+            # Chỉ chặn khi trùng tên VÀ trùng district_id.
+            existing_res = supabase.table("Streets").select("id, name, district_id, city_id").eq("district_id", data.district_id).order("name").execute()
             existing_list = existing_res.data or []
             for item in existing_list:
                 existing_name = item.get('name') or ''
