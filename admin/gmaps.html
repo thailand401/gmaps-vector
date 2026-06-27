@@ -568,6 +568,7 @@ async function loadPositions(endpoint) {
 function showInfo(pos, streetNames, marker) {
   activeInfoPos = pos;
   saveLastMarker(pos);
+  syncToolbarToPos(pos);
   document.getElementById('infoTitle').textContent = streetNames || 'Điểm #' + pos.id;
 
   // Đường*: tất cả street trong pos.streets (bảng Streets cục bộ)
@@ -654,13 +655,34 @@ function setAddMode(on) {
   if (on) showToast('Chế độ thêm điểm: BẬT — click 1 điểm trên bản đồ');
 }
 
-async function startAddPoint(lat, lng) {
-  setAddMode(false);   // một click → một điểm
-  closeAddModal();     // dọn điểm tạm/modal trước đó
-  closeSetNode();
+// Quick-add: tạo điểm ngay theo street id từ toolbar (không hiện modal)
+async function quickAddPoint(lat, lng, streetId) {
+  try {
+    const resp = await apiSend('/positions/bulk', 'POST', [{ lat, lon: lng, streets: [streetId] }]);
+    const row = (resp.created || [])[0];
+    if (!row) throw new Error('Không nhận được dữ liệu điểm');
+    const pos = { id: row.id, x: row.long != null ? row.long : lng, y: row.lat != null ? row.lat : lat, streets: row.streets || [streetId] };
+    const m = createMarker(pos);
+    if (m) m.addTo(layerGroup);
+    const sname = (streetMap[streetId] && streetMap[streetId].name) || ('#' + streetId);
+    showToast(`Đã tạo điểm #${pos.id} trên ${sname}`);
+  } catch (e) {
+    console.error('quickAddPoint', e);
+    alert('Tạo điểm thất bại.');
+  }
+}
 
+async function startAddPoint(lat, lng) {
   const rlat = Math.round(lat * 1e6) / 1e6;
   const rlng = Math.round(lng * 1e6) / 1e6;
+
+  // Quick-add: toolbar đã chọn street → tạo ngay theo id toolbar (không hiện modal), giữ chế độ để thêm tiếp
+  const toolbarStreet = parseInt(document.getElementById('selStreet').value);
+  if (toolbarStreet) { await quickAddPoint(rlat, rlng, toolbarStreet); return; }
+
+  setAddMode(false);   // một click → một điểm (modal khi chưa chọn street)
+  closeAddModal();     // dọn điểm tạm/modal trước đó
+  closeSetNode();
   pendingGeo = { lat: rlat, lng: rlng, osmStreet: '', osmWard: '' };
 
   // Marker tạm (xanh lá, kéo-thả để tinh chỉnh vị trí)
@@ -1043,6 +1065,29 @@ async function loadStreets(districtId, cityId) {
       sel.appendChild(o);
     });
   } catch (e) { console.error('loadStreets', e); }
+}
+
+// Ánh xạ city/district/street của 1 điểm lên toolbar (selCity/selDistrict/selStreet)
+async function syncToolbarToPos(pos) {
+  const sid = (pos.streets || [])[0];
+  const street = sid != null ? streetMap[sid] : null;
+  if (!street) return;
+  const districtId = street.district_id;
+  const cityId = street.city_id != null ? street.city_id : (districtMap[districtId] && districtMap[districtId].city);
+
+  const selCity = document.getElementById('selCity');
+  const selDistrict = document.getElementById('selDistrict');
+  const selStreet = document.getElementById('selStreet');
+
+  if (cityId != null) {
+    selCity.value = String(cityId);
+    await loadDistricts(cityId);
+  }
+  if (districtId != null) {
+    selDistrict.value = String(districtId);
+    await loadStreets(districtId, cityId);
+  }
+  if (sid != null) selStreet.value = String(sid);
 }
 
 // ══════════════════════════════════════════════════
