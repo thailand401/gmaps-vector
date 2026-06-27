@@ -313,6 +313,7 @@ async function onMarkerDragEnd(marker) {
   marker.setLatLng([newLat, newLng]);
   pos.y = newLat;
   pos.x = newLng;
+  pos._geo = null; // toạ độ đổi → xoá cache geocode để lấy lại
   if (activeInfoPos === pos) showInfo(pos, marker._streetNames, marker);
 
   try {
@@ -401,6 +402,8 @@ function showInfo(pos, streetNames, marker) {
     ['ID',      pos.id],
     ['Lat / Lng', `${Number(pos.y).toFixed(6)} / ${Number(pos.x).toFixed(6)}`],
     ['Đường',   streetNames],
+    ['Đường (OSM)', '<span id="infoOsmStreet">Đang tải…</span>'],
+    ['Quận/Huyện',  '<span id="infoDistrict">Đang tải…</span>'],
     ['Tốc độ',  pos.speed  != null ? pos.speed + ' km/h' : '—'],
     ['Làn xe',  pos.lane   ?? '—'],
     ['Đỗ xe',   pos.park   != null ? (pos.park   ? 'Có' : 'Không') : '—'],
@@ -414,6 +417,44 @@ function showInfo(pos, streetNames, marker) {
 
   document.getElementById('infoPanel').style.display = 'block';
   map.panTo(marker.getLatLng());
+
+  // Lấy street + district từ Nominatim (reverse geocoding)
+  fillReverseGeocode(pos);
+}
+
+// ── Reverse geocoding qua Nominatim: lat/lon → street, district ──
+async function reverseGeocode(lat, lon) {
+  const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}`
+            + `&format=json&addressdetails=1&accept-language=vi`;
+  const res = await fetch(url, { headers: { 'Accept-Language': 'vi' } });
+  if (!res.ok) throw new Error(`Nominatim → ${res.status}`);
+  const data = await res.json();
+  const a = data.address || {};
+  const street   = a.road || a.pedestrian || a.residential || a.footway || a.path || a.neighbourhood || '';
+  const district = a.city_district || a.district || a.suburb || a.county || a.quarter || '';
+  return { street, district };
+}
+
+// Điền street/district vào info panel (cache theo pos để tránh gọi lại Nominatim)
+async function fillReverseGeocode(pos) {
+  const apply = (street, district) => {
+    if (activeInfoPos !== pos) return; // marker khác đã được chọn
+    const sEl = document.getElementById('infoOsmStreet');
+    const dEl = document.getElementById('infoDistrict');
+    if (sEl) sEl.textContent = street   || '—';
+    if (dEl) dEl.textContent = district || '—';
+  };
+
+  if (pos._geo) { apply(pos._geo.street, pos._geo.district); return; }
+
+  try {
+    const geo = await reverseGeocode(pos.y, pos.x);
+    pos._geo = geo;
+    apply(geo.street, geo.district);
+  } catch (e) {
+    console.error('reverseGeocode', e);
+    apply('', '');
+  }
 }
 
 // ══════════════════════════════════════════════════
