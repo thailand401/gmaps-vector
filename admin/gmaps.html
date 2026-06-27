@@ -191,6 +191,7 @@ const DEFAULT_ZOOM = 12;
 let map;
 let layerGroup  = null;   // L.LayerGroup chứa toàn bộ marker
 let streetMap   = {};     // id → street object
+let districtMap = {};     // id → district object
 let allStreets  = [];
 let moveMode      = false; // bật/tắt chế độ kéo-thả marker
 let activeInfoPos = null;  // pos đang hiển thị ở info panel
@@ -398,12 +399,24 @@ function showInfo(pos, streetNames, marker) {
   activeInfoPos = pos;
   document.getElementById('infoTitle').textContent = streetNames || 'Điểm #' + pos.id;
 
+  // Đường*: tất cả street trong pos.streets (bảng Streets cục bộ)
+  const streetsLocal = (pos.streets || [])
+    .map(id => streetMap[id]?.name)
+    .filter(Boolean)
+    .join(', ') || '—';
+  // Phường*: district của street ĐẦU TIÊN (bảng Districts cục bộ)
+  const firstSid  = (pos.streets || [])[0];
+  const wardLocal = firstSid != null
+    ? (districtMap[streetMap[firstSid]?.district_id]?.name || '—')
+    : '—';
+
   const rows = [
     ['ID',      pos.id],
     ['Lat / Lng', `${Number(pos.y).toFixed(6)} / ${Number(pos.x).toFixed(6)}`],
-    ['Đường',   streetNames],
-    ['Đường (OSM)', '<span id="infoOsmStreet">Đang tải…</span>'],
-    ['Quận/Huyện',  '<span id="infoDistrict">Đang tải…</span>'],
+    ['Đường*',       streetsLocal],
+    ['Đường (osm)',  '<span id="infoOsmStreet">Đang tải…</span>'],
+    ['Phường*',      wardLocal],
+    ['Phường (osm)', '<span id="infoOsmWard">Đang tải…</span>'],
     ['Tốc độ',  pos.speed  != null ? pos.speed + ' km/h' : '—'],
     ['Làn xe',  pos.lane   ?? '—'],
     ['Đỗ xe',   pos.park   != null ? (pos.park   ? 'Có' : 'Không') : '—'],
@@ -422,7 +435,7 @@ function showInfo(pos, streetNames, marker) {
   fillReverseGeocode(pos);
 }
 
-// ── Reverse geocoding qua Nominatim: lat/lon → street, district ──
+// ── Reverse geocoding qua Nominatim: lat/lon → street, ward (phường) ──
 async function reverseGeocode(lat, lon) {
   const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}`
             + `&format=json&addressdetails=1&accept-language=vi`;
@@ -430,27 +443,27 @@ async function reverseGeocode(lat, lon) {
   if (!res.ok) throw new Error(`Nominatim → ${res.status}`);
   const data = await res.json();
   const a = data.address || {};
-  const street   = a.road || a.pedestrian || a.residential || a.footway || a.path || a.neighbourhood || '';
-  const district = a.city_district || a.district || a.suburb || a.county || a.quarter || '';
-  return { street, district };
+  const street = a.road || a.pedestrian || a.residential || a.footway || a.path || a.neighbourhood || '';
+  const ward   = a.quarter || a.suburb || a.ward || a.neighbourhood || a.city_district || a.district || a.county || '';
+  return { street, ward };
 }
 
-// Điền street/district vào info panel (cache theo pos để tránh gọi lại Nominatim)
+// Điền street/phường (OSM) vào info panel (cache theo pos để tránh gọi lại Nominatim)
 async function fillReverseGeocode(pos) {
-  const apply = (street, district) => {
+  const apply = (street, ward) => {
     if (activeInfoPos !== pos) return; // marker khác đã được chọn
     const sEl = document.getElementById('infoOsmStreet');
-    const dEl = document.getElementById('infoDistrict');
-    if (sEl) sEl.textContent = street   || '—';
-    if (dEl) dEl.textContent = district || '—';
+    const wEl = document.getElementById('infoOsmWard');
+    if (sEl) sEl.textContent = street || '—';
+    if (wEl) wEl.textContent = ward   || '—';
   };
 
-  if (pos._geo) { apply(pos._geo.street, pos._geo.district); return; }
+  if (pos._geo) { apply(pos._geo.street, pos._geo.ward); return; }
 
   try {
     const geo = await reverseGeocode(pos.y, pos.x);
     pos._geo = geo;
-    apply(geo.street, geo.district);
+    apply(geo.street, geo.ward);
   } catch (e) {
     console.error('reverseGeocode', e);
     apply('', '');
@@ -536,7 +549,6 @@ function setupSearch() {
 function setupUIListeners() {
   document.getElementById('selCity').addEventListener('change', async e => {
     await loadDistricts(e.target.value);
-    if (!e.target.value) { streetMap = {}; allStreets = []; }
   });
 
   document.getElementById('selDistrict').addEventListener('change', async e => {
@@ -558,7 +570,6 @@ function setupUIListeners() {
     document.getElementById('selDistrict').innerHTML = '<option value="">-- Quận/Huyện --</option>';
     document.getElementById('selStreet').innerHTML   = '<option value="">-- Đường --</option>';
     document.getElementById('searchInput').value = '';
-    streetMap = {}; allStreets = [];
     map.setView([DEFAULT_LAT, DEFAULT_LNG], DEFAULT_ZOOM);
   });
 
@@ -568,11 +579,27 @@ function setupUIListeners() {
 // ══════════════════════════════════════════════════
 //  BOOT
 // ══════════════════════════════════════════════════
+// Nạp toàn bộ Streets + Districts để resolve tên đường/phường cho mọi marker
+async function loadAllRefData() {
+  try {
+    const [streets, districts] = await Promise.all([
+      apiFetch('/streets'),
+      apiFetch('/districts'),
+    ]);
+    (streets || []).forEach(s => { streetMap[s.id] = s; });
+    allStreets = streets || [];
+    (districts || []).forEach(d => { districtMap[d.id] = d; });
+  } catch (e) {
+    console.error('loadAllRefData', e);
+  }
+}
+
 (async function boot() {
   initMap();
   setupSearch();
   setupUIListeners();
   await loadCities();
+  await loadAllRefData();   // nạp Streets + Districts trước khi render marker
 
   // Load toàn bộ marker từ DB ngay khi trang mở
   await loadPositions('/positions');
