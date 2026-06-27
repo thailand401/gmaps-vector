@@ -362,9 +362,12 @@ class MapsService:
     @staticmethod
     async def update_position(position_id: int, data: PositionUpdate) -> Position:
         try:
-            payload = {k: v for k, v in data.model_dump().items() if v is not None}
+            raw = {k: v for k, v in data.model_dump().items() if v is not None}
+            # Map model fields -> DB columns (x->long, y->lat); 'street_id' is not a column
+            col_map = {'x': 'long', 'y': 'lat'}
+            payload = {col_map.get(k, k): v for k, v in raw.items() if k != 'street_id'}
             result = supabase.table("Positions").update(payload).eq("id", position_id).execute()
-            return Position(**result.data[0])
+            return Position(**MapsService._db_pos_to_model(result.data[0]))
         except Exception as e:
             raise Exception(f"Failed to update position: {str(e)}")
 

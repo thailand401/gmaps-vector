@@ -61,6 +61,10 @@
       background: #f1f3f4; color: #3c4043;
     }
     #toolbar button.secondary:hover { background: #e2e4e6; }
+    #toolbar button.active {
+      background: #34a853; color: #fff;
+    }
+    #toolbar button.active:hover { background: #2d9248; }
 
     /* ── Counter badge ── */
     #counter {
@@ -114,6 +118,26 @@
       font-size: 16px; color: #555;
     }
     #loading.hidden { display: none; }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed;
+      bottom: 70px; left: 50%;
+      transform: translateX(-50%);
+      background: rgba(52,168,83,.95);
+      color: #fff;
+      border-radius: 8px;
+      padding: 8px 18px;
+      font-size: 13px;
+      z-index: 30;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .25s;
+      white-space: nowrap;
+      max-width: calc(100vw - 32px);
+      text-align: center;
+    }
+    #toast.show { opacity: 1; }
   </style>
 </head>
 <body>
@@ -132,11 +156,15 @@
   <select id="selDistrict"><option value="">-- Quận/Huyện --</option></select>
   <select id="selStreet"><option value="">-- Đường --</option></select>
   <button id="btnLoad">Lọc điểm</button>
+  <button id="btnMove" class="secondary">Move điểm</button>
   <button id="btnClear" class="secondary">Reset</button>
 </div>
 
 <!-- Marker count -->
 <div id="counter" style="display:none"></div>
+
+<!-- Toast -->
+<div id="toast"></div>
 
 <!-- Info panel -->
 <div id="infoPanel">
@@ -164,6 +192,8 @@ let map;
 let layerGroup  = null;   // L.LayerGroup chứa toàn bộ marker
 let streetMap   = {};     // id → street object
 let allStreets  = [];
+let moveMode      = false; // bật/tắt chế độ kéo-thả marker
+let activeInfoPos = null;  // pos đang hiển thị ở info panel
 
 // ══════════════════════════════════════════════════
 //  HELPERS
@@ -172,6 +202,29 @@ async function apiFetch(path) {
   const res = await fetch(API + path, { headers: { 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' } });
   if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
   return res.json();
+}
+
+async function apiSend(path, method, body) {
+  const res = await fetch(API + path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': sessionStorage.getItem('admin_api_key') || '',
+    },
+    body: body != null ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
+  return res.json();
+}
+
+let _toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
 }
 
 function setLoading(on) {
@@ -187,6 +240,7 @@ function setCounter(n) {
 
 function hideInfo() {
   document.getElementById('infoPanel').style.display = 'none';
+  activeInfoPos = null;
 }
 
 // ══════════════════════════════════════════════════
@@ -238,9 +292,56 @@ function createMarker(pos) {
     .filter(Boolean)
     .join(', ') || '—';
 
-  const m = L.marker([lat, lng], { icon: circleIcon('#4285f4'), title: streetNames });
+  const m = L.marker([lat, lng], { icon: circleIcon('#4285f4'), title: streetNames, draggable: moveMode });
+  m._pos = pos;
+  m._streetNames = streetNames;
   m.on('click', () => showInfo(pos, streetNames, m));
+  m.on('dragend', () => onMarkerDragEnd(m));
   return m;
+}
+
+// ── Drag-drop: cập nhật lat/lng mới khi thả marker ──
+async function onMarkerDragEnd(marker) {
+  const pos = marker._pos;
+  const prevLat = pos.y, prevLng = pos.x;
+  const ll = marker.getLatLng();
+  // Làm tròn 6 chữ số thập phân
+  const newLat = Math.round(ll.lat * 1e6) / 1e6;
+  const newLng = Math.round(ll.lng * 1e6) / 1e6;
+
+  // Snap marker về vị trí đã làm tròn + cập nhật dữ liệu
+  marker.setLatLng([newLat, newLng]);
+  pos.y = newLat;
+  pos.x = newLng;
+  if (activeInfoPos === pos) showInfo(pos, marker._streetNames, marker);
+
+  try {
+    await apiSend(`/positions/${pos.id}`, 'PUT', { x: newLng, y: newLat });
+    showToast(`Đã lưu #${pos.id}: ${newLat}, ${newLng}`);
+  } catch (e) {
+    console.error('onMarkerDragEnd', e);
+    // Revert khi lưu thất bại
+    pos.y = prevLat; pos.x = prevLng;
+    marker.setLatLng([prevLat, prevLng]);
+    if (activeInfoPos === pos) showInfo(pos, marker._streetNames, marker);
+    alert('Không thể lưu vị trí mới cho điểm #' + pos.id);
+  }
+}
+
+// ── Bật/tắt chế độ di chuyển điểm ──
+function setMoveMode(on) {
+  moveMode = on;
+  const btn = document.getElementById('btnMove');
+  btn.classList.toggle('active', on);
+  btn.classList.toggle('secondary', !on);
+  if (layerGroup) {
+    layerGroup.eachLayer(layer => {
+      if (!layer.dragging) return;
+      if (on) layer.dragging.enable();
+      else layer.dragging.disable();
+    });
+  }
+  showToast(on ? 'Chế độ di chuyển: BẬT — kéo marker để đổi vị trí' : 'Chế độ di chuyển: TẮT');
 }
 
 // ══════════════════════════════════════════════════
@@ -293,6 +394,7 @@ async function loadPositions(endpoint) {
 //  INFO PANEL
 // ══════════════════════════════════════════════════
 function showInfo(pos, streetNames, marker) {
+  activeInfoPos = pos;
   document.getElementById('infoTitle').textContent = streetNames || 'Điểm #' + pos.id;
 
   const rows = [
@@ -406,6 +508,8 @@ function setupUIListeners() {
     const endpoint = streetId ? `/positions?street_id=${streetId}` : '/positions';
     loadPositions(endpoint);
   });
+
+  document.getElementById('btnMove').addEventListener('click', () => setMoveMode(!moveMode));
 
   document.getElementById('btnClear').addEventListener('click', () => {
     clearMarkers();
