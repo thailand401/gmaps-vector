@@ -49,6 +49,10 @@ async function loadAllPointrsFromDB() {
             // pos.y = lat, pos.x = lon (from backend _db_pos_to_model)
             if (pos.y == null || pos.x == null) return;
 
+            // Round coordinates to 6 decimal places before rendering
+            const lat = Math.round(pos.y * 1e6) / 1e6;
+            const lon = Math.round(pos.x * 1e6) / 1e6;
+
             // Resolve street name(s) from allStreetsData
             const streetIds = Array.isArray(pos.streets) ? pos.streets : [];
             const streetName = streetIds
@@ -56,8 +60,8 @@ async function loadAllPointrsFromDB() {
                 .filter(Boolean)
                 .join(' - ');
 
-            const pixelPos = latLonToPixel(pos.y, pos.x, sizePer);
-            const { pointr, pointrId } = createPointr(pixelPos.left, pixelPos.top, streetName, pos.y, pos.x);
+            const pixelPos = latLonToPixel(lat, lon, sizePer);
+            const { pointr, pointrId } = createPointr(pixelPos.left, pixelPos.top, streetName, lat, lon);
 
             // createPointr adds to pointrData; move the entry to pointrReload
             const data = pointrData.get(pointrId);
