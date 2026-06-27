@@ -338,6 +338,7 @@ const DEFAULT_LAT  = 10.8231;
 const DEFAULT_LNG  = 106.6297;
 const DEFAULT_ZOOM = 12;
 const NEARBY_RADIUS_KM = 1; // bán kính gộp đường lân cận vào 1 node (Add điểm)
+const LAST_MARKER_KEY = 'gmaps_last_marker'; // localStorage: toạ độ marker chọn gần nhất
 
 // ══════════════════════════════════════════════════
 //  STATE
@@ -383,6 +384,11 @@ function showToast(msg) {
   el.classList.add('show');
   clearTimeout(_toastTimer);
   _toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// Lưu toạ độ marker vừa chọn để lần reload sau center về đó (zoom 15)
+function saveLastMarker(pos) {
+  try { localStorage.setItem(LAST_MARKER_KEY, JSON.stringify({ lat: pos.y, lng: pos.x })); } catch (e) {}
 }
 
 function setLoading(on) {
@@ -561,6 +567,7 @@ async function loadPositions(endpoint) {
 // ══════════════════════════════════════════════════
 function showInfo(pos, streetNames, marker) {
   activeInfoPos = pos;
+  saveLastMarker(pos);
   document.getElementById('infoTitle').textContent = streetNames || 'Điểm #' + pos.id;
 
   // Đường*: tất cả street trong pos.streets (bảng Streets cục bộ)
@@ -1137,6 +1144,14 @@ async function loadAllRefData() {
 
   // Load toàn bộ marker từ DB ngay khi trang mở
   await loadPositions('/positions');
+
+  // Nếu lần trước có chọn marker → center về đó, zoom 15
+  try {
+    const last = JSON.parse(localStorage.getItem(LAST_MARKER_KEY) || 'null');
+    if (last && last.lat != null && last.lng != null) {
+      map.setView([last.lat, last.lng], 15);
+    }
+  } catch (e) {}
 
   setLoading(false);
 })();
