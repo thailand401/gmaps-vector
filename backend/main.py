@@ -400,6 +400,27 @@ async def search_streets(payload: dict = Body(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/districts/search")
+async def search_districts(payload: dict = Body(...)):
+    """Search districts by text.
+    Payload: { text: str, city_id?: int, limit?: int }
+    Returns list of matches with score.
+    """
+    try:
+        text = payload.get('text')
+        if not text:
+            raise HTTPException(status_code=422, detail='text is required')
+        city_id = payload.get('city_id')
+        limit = int(payload.get('limit') or 10)
+        results = await MapsService.search_districts_by_text(text, city_id=city_id, limit=limit)
+        return { 'results': results }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error searching districts: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/streets", response_model=Street)
 async def create_street(street: StreetCreate):
     """Create a new street. Returns 409 with {error:'duplicate', street:{id,name}} if similar exists."""

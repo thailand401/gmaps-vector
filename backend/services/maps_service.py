@@ -303,6 +303,83 @@ class MapsService:
         except Exception as e:
             raise Exception(f"Failed to search streets: {str(e)}")
 
+    @staticmethod
+    async def search_districts_by_text(text: str, city_id: Optional[int] = None, limit: int = 10) -> list:
+        """Search districts by text with normalization and fuzzy matching.
+        Matches against both `name` and `lname` (best score wins).
+        Returns list of dicts: {id, name, lname, city, score}
+        Lower score == better match.
+        """
+        try:
+            if not text or not str(text).strip():
+                return []
+            import re
+            def _normalize(s: str) -> str:
+                s = str(s or '').strip().lower()
+                s = unicodedata.normalize('NFKD', s)
+                s = ''.join(ch for ch in s if not unicodedata.combining(ch))
+                s = re.sub(r'[^0-9a-z\s]', ' ', s)
+                s = ' '.join(s.split())
+                return s
+
+            def _lev(a: str, b: str) -> int:
+                if a == b:
+                    return 0
+                if len(a) == 0:
+                    return len(b)
+                if len(b) == 0:
+                    return len(a)
+                prev = list(range(len(b) + 1))
+                for i, ca in enumerate(a, start=1):
+                    curr = [i]
+                    for j, cb in enumerate(b, start=1):
+                        insert_cost = curr[j-1] + 1
+                        delete_cost = prev[j] + 1
+                        replace_cost = prev[j-1] + (0 if ca == cb else 1)
+                        curr.append(min(insert_cost, delete_cost, replace_cost))
+                    prev = curr
+                return prev[-1]
+
+            def _score(query_norm: str, cand_norm: str) -> float:
+                if not cand_norm:
+                    return 1.0
+                if cand_norm == query_norm:
+                    return 0.0
+                if query_norm in cand_norm or cand_norm in query_norm:
+                    return 0.1
+                dist = _lev(query_norm, cand_norm)
+                max_len = max(len(query_norm), len(cand_norm), 1)
+                return dist / max_len
+
+            q = _normalize(text)
+            # Fetch candidate districts, optionally filtered by city
+            query = supabase.table("Districts").select("id, name, lname, city").order("name")
+            if city_id is not None:
+                query = query.eq("city", city_id)
+            res = query.execute()
+            candidates = res.data or []
+
+            scored = []
+            for item in candidates:
+                name  = item.get('name') or ''
+                lname = item.get('lname') or ''
+                score = _score(q, _normalize(name))
+                if lname:
+                    score = min(score, _score(q, _normalize(lname)))
+                scored.append({
+                    'id': item.get('id'),
+                    'name': name,
+                    'lname': item.get('lname'),
+                    'city': item.get('city'),
+                    'score': round(float(score), 3)
+                })
+
+            # sort by score asc, then by name
+            scored.sort(key=lambda x: (x['score'], x['name']))
+            return scored[:limit]
+        except Exception as e:
+            raise Exception(f"Failed to search districts: {str(e)}")
+
     # ==================== POSITIONS ====================
 
     @staticmethod
