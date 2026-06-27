@@ -140,7 +140,7 @@
     #toast.show { opacity: 1; }
 
     /* ── Add-point modal (panel bên trái, không chặn map) ── */
-    #addModal {
+    #addModal, #setNodeModal {
       position: fixed;
       top: 70px; left: 16px;
       width: 300px;
@@ -154,13 +154,13 @@
       display: none;
       font-size: 13px;
     }
-    #addModal h3 { font-size: 14px; margin-bottom: 12px; color: #202124; }
-    #addModal .close-btn {
+    #addModal h3, #setNodeModal h3 { font-size: 14px; margin-bottom: 12px; color: #202124; }
+    #addModal .close-btn, #setNodeModal .close-btn {
       position: absolute; top: 10px; right: 12px;
       cursor: pointer; font-size: 18px; color: #888; line-height: 1;
       background: none; border: none;
     }
-    #addModal .close-btn:hover { color: #333; }
+    #addModal .close-btn:hover, #setNodeModal .close-btn:hover { color: #333; }
     .modal-field { margin-bottom: 12px; }
     .modal-field > label {
       display: block; color: #777; margin-bottom: 4px; font-size: 12px;
@@ -171,27 +171,33 @@
     }
     .row-inline { display: flex; gap: 6px; align-items: center; }
     .row-inline select { flex: 1; min-width: 0; }
-    #addModal select {
+    #addModal select, #setNodeModal select {
       border: 1px solid #d0d0d0; border-radius: 8px;
       padding: 6px 8px; font-size: 13px; background: #fafafa; outline: none;
     }
-    #addModal .icon-btn {
+    #addModal .icon-btn, #setNodeModal .icon-btn {
       border: none; border-radius: 8px; padding: 6px 11px;
       font-size: 15px; line-height: 1; cursor: pointer;
       background: #34a853; color: #fff; font-weight: 700; flex: 0 0 auto;
     }
-    #addModal .icon-btn:hover { background: #2d9248; }
+    #addModal .icon-btn:hover, #setNodeModal .icon-btn:hover { background: #2d9248; }
     .modal-hint { display: block; color: #999; font-size: 11px; margin-top: 4px; }
     .modal-actions { display: flex; gap: 8px; margin-top: 6px; }
-    #addModal .modal-actions button {
+    #addModal .modal-actions button, #setNodeModal .modal-actions button {
       border: none; border-radius: 8px; padding: 8px 14px;
       font-size: 13px; cursor: pointer; font-weight: 600; flex: 1;
     }
-    #btnSubmitPoint { background: #4285f4; color: #fff; }
-    #btnSubmitPoint:hover { background: #2a6dd4; }
-    #btnSubmitPoint:disabled { background: #b9c6e0; cursor: not-allowed; }
-    #btnCancelPoint { background: #f1f3f4; color: #3c4043; }
-    #btnCancelPoint:hover { background: #e2e4e6; }
+    #btnSubmitPoint, #btnSetNodeSave { background: #4285f4; color: #fff; }
+    #btnSubmitPoint:hover, #btnSetNodeSave:hover { background: #2a6dd4; }
+    #btnSubmitPoint:disabled, #btnSetNodeSave:disabled { background: #b9c6e0; cursor: not-allowed; }
+    #btnCancelPoint, #btnSetNodeCancel { background: #f1f3f4; color: #3c4043; }
+    #btnCancelPoint:hover, #btnSetNodeCancel:hover { background: #e2e4e6; }
+    #infoPanel .info-action {
+      margin-top: 12px; width: 100%;
+      border: none; border-radius: 8px; padding: 8px;
+      background: #34a853; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer;
+    }
+    #infoPanel .info-action:hover { background: #2d9248; }
     .nearby-box {
       max-height: 140px; overflow-y: auto;
       border: 1px solid #e0e0e0; border-radius: 8px;
@@ -245,6 +251,36 @@
   <button class="close-btn" id="closeInfo">&times;</button>
   <h3 id="infoTitle">Chi tiết điểm</h3>
   <div id="infoBody"></div>
+  <button id="btnSetNode" class="info-action">Set Node (sửa đường)</button>
+</div>
+
+<!-- Set Node modal -->
+<div id="setNodeModal">
+  <button class="close-btn" id="setNodeCloseX">&times;</button>
+  <h3>Set Node — đường của điểm</h3>
+
+  <div class="modal-field">
+    <label>Điểm</label>
+    <div id="setNodeInfo" class="latlng-label">—</div>
+  </div>
+
+  <div class="modal-field">
+    <label>Đường lân cận ≤ 1km <span id="setNodeNearbyCount"></span></label>
+    <div class="row-inline">
+      <select id="setNodeNearbySel" multiple size="4"></select>
+      <button id="btnSetNodeAdd" class="icon-btn" title="Thêm các đường đã chọn vào node">+</button>
+    </div>
+  </div>
+
+  <div class="modal-field">
+    <label>Đường của node</label>
+    <div id="setNodeStreetsList" class="nearby-box"></div>
+  </div>
+
+  <div class="modal-actions">
+    <button id="btnSetNodeSave">Lưu</button>
+    <button id="btnSetNodeCancel">Huỷ</button>
+  </div>
 </div>
 
 <!-- Add-point modal -->
@@ -460,7 +496,7 @@ async function onMarkerDragEnd(marker) {
 // ── Bật/tắt chế độ di chuyển điểm ──
 function setMoveMode(on) {
   moveMode = on;
-  if (on) { setAddMode(false); closeAddModal(); } // không bật đồng thời với "Add điểm"
+  if (on) { setAddMode(false); closeAddModal(); closeSetNode(); } // không bật đồng thời với "Add điểm"
   const btn = document.getElementById('btnMove');
   btn.classList.toggle('active', on);
   btn.classList.toggle('secondary', !on);
@@ -614,6 +650,7 @@ function setAddMode(on) {
 async function startAddPoint(lat, lng) {
   setAddMode(false);   // một click → một điểm
   closeAddModal();     // dọn điểm tạm/modal trước đó
+  closeSetNode();
 
   const rlat = Math.round(lat * 1e6) / 1e6;
   const rlng = Math.round(lng * 1e6) / 1e6;
@@ -739,27 +776,32 @@ function clearNodeStreets() {
   document.getElementById('nodeStreetsList').innerHTML = '';
 }
 
+// Thêm 1 dòng đường vào danh sách node (dedup); onChange gọi sau khi thêm/xoá
+function appendStreetRow(listEl, id, onChange) {
+  if (!id || listEl.querySelector(`[data-street-id="${id}"]`)) return false;
+  const name = (streetMap[id] && streetMap[id].name) || ('#' + id);
+  const row = document.createElement('div');
+  row.className = 'node-street-row';
+  row.setAttribute('data-street-id', id);
+  const span = document.createElement('span');
+  span.textContent = `${name} (#${id})`;
+  const btn = document.createElement('button');
+  btn.type = 'button'; btn.textContent = '✕'; btn.title = 'Bỏ';
+  btn.addEventListener('click', () => { row.remove(); if (onChange) onChange(); });
+  row.appendChild(span);
+  row.appendChild(btn);
+  listEl.appendChild(row);
+  if (onChange) onChange();
+  return true;
+}
+
 // Thêm các đường lân cận đang chọn (nhiều) vào danh sách node
 function addNearbyStreet() {
   const sel = document.getElementById('nearbyStreetSel');
   const ids = [...sel.selectedOptions].map(o => parseInt(o.value)).filter(Boolean);
   if (!ids.length) return;
   const listEl = document.getElementById('nodeStreetsList');
-  ids.forEach(id => {
-    if (listEl.querySelector(`[data-street-id="${id}"]`)) return; // đã có
-    const name = (streetMap[id] && streetMap[id].name) || ('#' + id);
-    const row = document.createElement('div');
-    row.className = 'node-street-row';
-    row.setAttribute('data-street-id', id);
-    const span = document.createElement('span');
-    span.textContent = `${name} (#${id})`;
-    const btn = document.createElement('button');
-    btn.type = 'button'; btn.textContent = '✕'; btn.title = 'Bỏ';
-    btn.addEventListener('click', () => row.remove());
-    row.appendChild(span);
-    row.appendChild(btn);
-    listEl.appendChild(row);
-  });
+  ids.forEach(id => appendStreetRow(listEl, id));
   sel.selectedIndex = -1; // bỏ chọn sau khi thêm
 }
 
@@ -859,6 +901,92 @@ function closeAddModal() {
   document.getElementById('addModal').style.display = 'none';
   if (pendingMarker) { map.removeLayer(pendingMarker); pendingMarker = null; }
   pendingGeo = null;
+}
+
+// ══════════════════════════════════════════════════
+//  SET NODE (sửa đường của 1 điểm có sẵn)
+// ══════════════════════════════════════════════════
+let setNodeTarget = null;
+
+function findMarkerByPos(pos) {
+  let found = null;
+  if (layerGroup) layerGroup.eachLayer(l => { if (l._pos === pos) found = l; });
+  return found;
+}
+
+function openSetNode() {
+  const pos = activeInfoPos;
+  if (!pos) return;
+  setNodeTarget = pos;
+  closeAddModal();
+  document.getElementById('setNodeInfo').textContent =
+    `#${pos.id} — ${Number(pos.y).toFixed(6)} / ${Number(pos.x).toFixed(6)}`;
+
+  // Dropdown đường lân cận ≤1km
+  const sel = document.getElementById('setNodeNearbySel');
+  const list = getNearbyStreets(pos.y, pos.x, NEARBY_RADIUS_KM);
+  document.getElementById('setNodeNearbyCount').textContent = list.length ? `(${list.length})` : '';
+  sel.innerHTML = '';
+  list.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id; o.textContent = `${s.name} (#${s.id})`;
+    sel.appendChild(o);
+  });
+
+  // Danh sách đường hiện tại của node
+  const listEl = document.getElementById('setNodeStreetsList');
+  listEl.innerHTML = '';
+  (pos.streets || []).forEach(id => appendStreetRow(listEl, id, updateSetNodeSaveState));
+  updateSetNodeSaveState();
+  document.getElementById('setNodeModal').style.display = 'block';
+}
+
+function setNodeAdd() {
+  const sel = document.getElementById('setNodeNearbySel');
+  const ids = [...sel.selectedOptions].map(o => parseInt(o.value)).filter(Boolean);
+  if (!ids.length) return;
+  const listEl = document.getElementById('setNodeStreetsList');
+  ids.forEach(id => appendStreetRow(listEl, id, updateSetNodeSaveState));
+  sel.selectedIndex = -1;
+}
+
+function updateSetNodeSaveState() {
+  const n = document.querySelectorAll('#setNodeStreetsList [data-street-id]').length;
+  document.getElementById('btnSetNodeSave').disabled = n === 0;
+}
+
+function closeSetNode() {
+  document.getElementById('setNodeModal').style.display = 'none';
+  setNodeTarget = null;
+}
+
+async function saveSetNode() {
+  const pos = setNodeTarget;
+  if (!pos) return;
+  const streets = [...document.querySelectorAll('#setNodeStreetsList [data-street-id]')]
+    .map(el => parseInt(el.getAttribute('data-street-id'))).filter(Boolean);
+  if (!streets.length) { alert('Node cần ít nhất 1 đường.'); return; }
+  const btn = document.getElementById('btnSetNodeSave');
+  btn.disabled = true;
+  try {
+    // pos_id có → backend UPDATE streets + đồng bộ Streets.positions
+    await apiSend('/positions/bulk', 'POST', [{ lat: pos.y, lon: pos.x, streets, pos_id: pos.id }]);
+    pos.streets = streets;
+    const names = streets.map(id => streetMap[id] && streetMap[id].name).filter(Boolean).join(', ') || '—';
+    const marker = findMarkerByPos(pos);
+    if (marker) {
+      marker._streetNames = names;
+      const el = marker.getElement && marker.getElement();
+      if (el) el.setAttribute('title', names);
+    }
+    closeSetNode();
+    if (activeInfoPos === pos && marker) showInfo(pos, names, marker);
+    showToast(`Đã lưu node #${pos.id}: ${streets.length} đường`);
+  } catch (e) {
+    console.error('saveSetNode', e);
+    alert('Lưu node thất bại.');
+    btn.disabled = false;
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -963,6 +1091,12 @@ function setupUIListeners() {
   document.getElementById('btnCancelPoint').addEventListener('click', closeAddModal);
   document.getElementById('btnCancelPointX').addEventListener('click', closeAddModal);
   document.getElementById('addStreetSel').addEventListener('change', updateSubmitState);
+
+  document.getElementById('btnSetNode').addEventListener('click', openSetNode);
+  document.getElementById('btnSetNodeAdd').addEventListener('click', setNodeAdd);
+  document.getElementById('btnSetNodeSave').addEventListener('click', saveSetNode);
+  document.getElementById('btnSetNodeCancel').addEventListener('click', closeSetNode);
+  document.getElementById('setNodeCloseX').addEventListener('click', closeSetNode);
 
   document.getElementById('btnClear').addEventListener('click', () => {
     clearMarkers();
