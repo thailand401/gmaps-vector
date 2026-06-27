@@ -192,6 +192,17 @@
     #btnSubmitPoint:disabled { background: #b9c6e0; cursor: not-allowed; }
     #btnCancelPoint { background: #f1f3f4; color: #3c4043; }
     #btnCancelPoint:hover { background: #e2e4e6; }
+    .nearby-box {
+      max-height: 140px; overflow-y: auto;
+      border: 1px solid #e0e0e0; border-radius: 8px;
+      padding: 6px 8px; background: #fafafa;
+    }
+    .nearby-box label {
+      display: flex; align-items: center; gap: 6px;
+      padding: 2px 0; font-size: 12px; color: #3c4043; cursor: pointer;
+    }
+    .nearby-box .empty { color: #999; font-size: 12px; padding: 2px 0; }
+    #nearbyCount { color: #34a853; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -256,6 +267,11 @@
     <small id="addStreetOsm" class="modal-hint"></small>
   </div>
 
+  <div class="modal-field">
+    <label>Đường lân cận ≤ 2km <span id="nearbyCount"></span></label>
+    <div id="nearbyStreets" class="nearby-box"></div>
+  </div>
+
   <div class="modal-actions">
     <button id="btnSubmitPoint" disabled>Tạo điểm</button>
     <button id="btnCancelPoint">Huỷ</button>
@@ -273,6 +289,7 @@ const API          = location.hostname === 'localhost' ? 'http://localhost:4000/
 const DEFAULT_LAT  = 10.8231;
 const DEFAULT_LNG  = 106.6297;
 const DEFAULT_ZOOM = 12;
+const NEARBY_RADIUS_KM = 2; // bán kính gộp đường lân cận vào 1 node (Add điểm)
 
 // ══════════════════════════════════════════════════
 //  STATE
@@ -598,6 +615,7 @@ async function startAddPoint(lat, lng) {
     pendingGeo.lat = Math.round(ll.lat * 1e6) / 1e6;
     pendingGeo.lng = Math.round(ll.lng * 1e6) / 1e6;
     document.getElementById('addLatLng').textContent = `${pendingGeo.lat} / ${pendingGeo.lng}`;
+    fillNearbyStreets(pendingGeo.lat, pendingGeo.lng);
   });
 
   // Mở modal + trạng thái loading
@@ -609,6 +627,9 @@ async function startAddPoint(lat, lng) {
   updateSubmitState();
   document.getElementById('addModal').style.display = 'block';
   map.panTo([rlat, rlng]);
+
+  // Gộp đường lân cận ≤2km (tham khảo "Set Node" bên maps.html)
+  fillNearbyStreets(rlat, rlng);
 
   // 1) Reverse geocode → tên đường + phường OSM
   let geo = { street: '', ward: '' };
@@ -657,6 +678,59 @@ function fillStreetOptions(results) {
     sel.appendChild(o);
   });
   if (results[0] && results[0].score <= 0.2) sel.value = results[0].id;
+}
+
+// Haversine (km)
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Đường có ít nhất 1 điểm (marker đã load) nằm trong bán kính radiusKm quanh (lat,lng)
+function getNearbyStreets(lat, lng, radiusKm) {
+  const sids = new Set();
+  if (layerGroup) {
+    layerGroup.eachLayer(layer => {
+      const p = layer._pos;
+      if (!p || p.y == null || p.x == null) return;
+      if (haversineKm(lat, lng, p.y, p.x) <= radiusKm) {
+        (p.streets || []).forEach(sid => sids.add(sid));
+      }
+    });
+  }
+  return [...sids]
+    .map(sid => (streetMap[sid] ? { id: sid, name: streetMap[sid].name || ('#' + sid) } : null))
+    .filter(Boolean)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+// Render checklist đường lân cận (mặc định tích chọn để gộp vào node)
+function fillNearbyStreets(lat, lng) {
+  const box = document.getElementById('nearbyStreets');
+  const list = getNearbyStreets(lat, lng, NEARBY_RADIUS_KM);
+  document.getElementById('nearbyCount').textContent = list.length ? `(${list.length})` : '';
+  box.innerHTML = '';
+  if (!list.length) {
+    const d = document.createElement('div');
+    d.className = 'empty';
+    d.textContent = `Không có đường lân cận trong ${NEARBY_RADIUS_KM}km`;
+    box.appendChild(d);
+    return;
+  }
+  list.forEach(s => {
+    const lbl = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.className = 'nearby-cb'; cb.value = s.id; cb.checked = true;
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(' ' + s.name + ' '));
+    const sp = document.createElement('span');
+    sp.style.color = '#999'; sp.textContent = '#' + s.id;
+    lbl.appendChild(sp);
+    box.appendChild(lbl);
+  });
 }
 
 // Tạo phường mới từ OSM, gắn vào dropdown
@@ -725,13 +799,16 @@ async function onSubmitPoint() {
   if (!streetId) { alert('Vui lòng chọn đường (street) trước khi tạo điểm.'); return; }
   if (!pendingGeo) return;
   const lat = pendingGeo.lat, lng = pendingGeo.lng;
+  // Gộp đường chính + đường lân cận (≤2km) được tích chọn vào chung 1 node
+  const nearbyIds = [...document.querySelectorAll('#nearbyStreets .nearby-cb:checked')].map(cb => parseInt(cb.value));
+  const streets = [...new Set([streetId, ...nearbyIds].filter(Boolean))];
   const btn = document.getElementById('btnSubmitPoint');
   btn.disabled = true;
   try {
-    const resp = await apiSend('/positions/bulk', 'POST', [{ lat, lon: lng, streets: [streetId] }]);
+    const resp = await apiSend('/positions/bulk', 'POST', [{ lat, lon: lng, streets }]);
     const row = (resp.created || [])[0];
     if (!row) throw new Error('Không nhận được dữ liệu điểm');
-    const pos = { id: row.id, x: row.long != null ? row.long : lng, y: row.lat != null ? row.lat : lat, streets: row.streets || [streetId] };
+    const pos = { id: row.id, x: row.long != null ? row.long : lng, y: row.lat != null ? row.lat : lat, streets: row.streets || streets };
     const m = createMarker(pos);
     if (m) m.addTo(layerGroup);
     closeAddModal();
