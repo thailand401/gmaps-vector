@@ -138,6 +138,60 @@
       text-align: center;
     }
     #toast.show { opacity: 1; }
+
+    /* ── Add-point modal (panel bên trái, không chặn map) ── */
+    #addModal {
+      position: fixed;
+      top: 70px; left: 16px;
+      width: 300px;
+      max-height: calc(100vh - 90px);
+      overflow-y: auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.25);
+      padding: 16px;
+      z-index: 15;
+      display: none;
+      font-size: 13px;
+    }
+    #addModal h3 { font-size: 14px; margin-bottom: 12px; color: #202124; }
+    #addModal .close-btn {
+      position: absolute; top: 10px; right: 12px;
+      cursor: pointer; font-size: 18px; color: #888; line-height: 1;
+      background: none; border: none;
+    }
+    #addModal .close-btn:hover { color: #333; }
+    .modal-field { margin-bottom: 12px; }
+    .modal-field > label {
+      display: block; color: #777; margin-bottom: 4px; font-size: 12px;
+    }
+    .latlng-label {
+      font-family: monospace; background: #f1f3f4;
+      border-radius: 6px; padding: 6px 8px;
+    }
+    .row-inline { display: flex; gap: 6px; align-items: center; }
+    .row-inline select { flex: 1; min-width: 0; }
+    #addModal select {
+      border: 1px solid #d0d0d0; border-radius: 8px;
+      padding: 6px 8px; font-size: 13px; background: #fafafa; outline: none;
+    }
+    #addModal .icon-btn {
+      border: none; border-radius: 8px; padding: 6px 11px;
+      font-size: 15px; line-height: 1; cursor: pointer;
+      background: #34a853; color: #fff; font-weight: 700; flex: 0 0 auto;
+    }
+    #addModal .icon-btn:hover { background: #2d9248; }
+    .modal-hint { display: block; color: #999; font-size: 11px; margin-top: 4px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 6px; }
+    #addModal .modal-actions button {
+      border: none; border-radius: 8px; padding: 8px 14px;
+      font-size: 13px; cursor: pointer; font-weight: 600; flex: 1;
+    }
+    #btnSubmitPoint { background: #4285f4; color: #fff; }
+    #btnSubmitPoint:hover { background: #2a6dd4; }
+    #btnSubmitPoint:disabled { background: #b9c6e0; cursor: not-allowed; }
+    #btnCancelPoint { background: #f1f3f4; color: #3c4043; }
+    #btnCancelPoint:hover { background: #e2e4e6; }
   </style>
 </head>
 <body>
@@ -157,6 +211,7 @@
   <select id="selStreet"><option value="">-- Đường --</option></select>
   <button id="btnLoad">Lọc điểm</button>
   <button id="btnMove" class="secondary">Move điểm</button>
+  <button id="btnAdd" class="secondary">Add điểm</button>
   <button id="btnClear" class="secondary">Reset</button>
 </div>
 
@@ -171,6 +226,40 @@
   <button class="close-btn" id="closeInfo">&times;</button>
   <h3 id="infoTitle">Chi tiết điểm</h3>
   <div id="infoBody"></div>
+</div>
+
+<!-- Add-point modal -->
+<div id="addModal">
+  <button class="close-btn" id="btnCancelPointX">&times;</button>
+  <h3>Thêm điểm mới</h3>
+
+  <div class="modal-field">
+    <label>Toạ độ (lat / lng)</label>
+    <div id="addLatLng" class="latlng-label">—</div>
+  </div>
+
+  <div class="modal-field">
+    <label>Phường (district)</label>
+    <div class="row-inline">
+      <select id="addDistrictSel"><option value="">-- Chọn phường --</option></select>
+      <button id="btnCreateDistrict" class="icon-btn" title="Tạo phường từ OSM">+</button>
+    </div>
+    <small id="addDistrictOsm" class="modal-hint"></small>
+  </div>
+
+  <div class="modal-field">
+    <label>Đường (street) *</label>
+    <div class="row-inline">
+      <select id="addStreetSel"><option value="">-- Chọn đường --</option></select>
+      <button id="btnCreateStreet" class="icon-btn" title="Tạo đường từ OSM">+</button>
+    </div>
+    <small id="addStreetOsm" class="modal-hint"></small>
+  </div>
+
+  <div class="modal-actions">
+    <button id="btnSubmitPoint" disabled>Tạo điểm</button>
+    <button id="btnCancelPoint">Huỷ</button>
+  </div>
 </div>
 
 <!-- Leaflet JS -->
@@ -195,6 +284,9 @@ let districtMap = {};     // id → district object
 let allStreets  = [];
 let moveMode      = false; // bật/tắt chế độ kéo-thả marker
 let activeInfoPos = null;  // pos đang hiển thị ở info panel
+let addMode       = false; // bật/tắt chế độ thêm điểm (click map)
+let pendingMarker = null;  // marker tạm cho điểm đang thêm
+let pendingGeo    = null;  // { lat, lng, osmStreet, osmWard }
 
 // ══════════════════════════════════════════════════
 //  HELPERS
@@ -256,6 +348,12 @@ function initMap() {
   }).addTo(map);
 
   layerGroup = L.layerGroup().addTo(map);
+
+  // Click map khi đang ở chế độ "Add điểm" → bắt đầu thêm điểm
+  map.on('click', e => {
+    if (!addMode) return;
+    startAddPoint(e.latlng.lat, e.latlng.lng);
+  });
 }
 
 // ══════════════════════════════════════════════════
@@ -333,6 +431,7 @@ async function onMarkerDragEnd(marker) {
 // ── Bật/tắt chế độ di chuyển điểm ──
 function setMoveMode(on) {
   moveMode = on;
+  if (on) { setAddMode(false); closeAddModal(); } // không bật đồng thời với "Add điểm"
   const btn = document.getElementById('btnMove');
   btn.classList.toggle('active', on);
   btn.classList.toggle('secondary', !on);
@@ -471,6 +570,191 @@ async function fillReverseGeocode(pos) {
 }
 
 // ══════════════════════════════════════════════════
+//  ADD POINT (thêm điểm mới qua click map)
+// ══════════════════════════════════════════════════
+function setAddMode(on) {
+  addMode = on;
+  if (on && moveMode) setMoveMode(false);
+  const btn = document.getElementById('btnAdd');
+  btn.classList.toggle('active', on);
+  btn.classList.toggle('secondary', !on);
+  document.getElementById('map').style.cursor = on ? 'crosshair' : '';
+  if (on) showToast('Chế độ thêm điểm: BẬT — click 1 điểm trên bản đồ');
+}
+
+async function startAddPoint(lat, lng) {
+  setAddMode(false);   // một click → một điểm
+  closeAddModal();     // dọn điểm tạm/modal trước đó
+
+  const rlat = Math.round(lat * 1e6) / 1e6;
+  const rlng = Math.round(lng * 1e6) / 1e6;
+  pendingGeo = { lat: rlat, lng: rlng, osmStreet: '', osmWard: '' };
+
+  // Marker tạm (xanh lá, kéo-thả để tinh chỉnh vị trí)
+  pendingMarker = L.marker([rlat, rlng], { icon: circleIcon('#34a853'), draggable: true }).addTo(map);
+  pendingMarker.on('dragend', () => {
+    if (!pendingGeo) return;
+    const ll = pendingMarker.getLatLng();
+    pendingGeo.lat = Math.round(ll.lat * 1e6) / 1e6;
+    pendingGeo.lng = Math.round(ll.lng * 1e6) / 1e6;
+    document.getElementById('addLatLng').textContent = `${pendingGeo.lat} / ${pendingGeo.lng}`;
+  });
+
+  // Mở modal + trạng thái loading
+  document.getElementById('addLatLng').textContent = `${rlat} / ${rlng}`;
+  document.getElementById('addDistrictOsm').textContent = 'OSM: đang tải…';
+  document.getElementById('addStreetOsm').textContent = 'OSM: đang tải…';
+  resetSelect('addDistrictSel', '-- Chọn phường --');
+  resetSelect('addStreetSel', '-- Chọn đường --');
+  updateSubmitState();
+  document.getElementById('addModal').style.display = 'block';
+  map.panTo([rlat, rlng]);
+
+  // 1) Reverse geocode → tên đường + phường OSM
+  let geo = { street: '', ward: '' };
+  try { geo = await reverseGeocode(rlat, rlng); }
+  catch (e) { console.error('reverseGeocode(add)', e); }
+  if (!pendingGeo) return; // đã huỷ trong lúc chờ
+  pendingGeo.osmStreet = geo.street || '';
+  pendingGeo.osmWard   = geo.ward   || '';
+  document.getElementById('addStreetOsm').textContent   = 'OSM: ' + (geo.street || '(không có)');
+  document.getElementById('addDistrictOsm').textContent = 'OSM: ' + (geo.ward   || '(không có)');
+
+  // 2) Fuzzy search song song street + district (dữ liệu cục bộ, city_id=1)
+  const [streetRes, districtRes] = await Promise.all([
+    geo.street ? apiSend('/streets/search',   'POST', { text: geo.street, city_id: 1, limit: 10 }).catch(() => ({ results: [] })) : Promise.resolve({ results: [] }),
+    geo.ward   ? apiSend('/districts/search', 'POST', { text: geo.ward,   city_id: 1, limit: 10 }).catch(() => ({ results: [] })) : Promise.resolve({ results: [] }),
+  ]);
+  if (!pendingGeo) return;
+  fillDistrictOptions(districtRes.results || []);
+  fillStreetOptions(streetRes.results || []);
+  updateSubmitState();
+}
+
+function resetSelect(id, placeholder) {
+  document.getElementById(id).innerHTML = `<option value="">${placeholder}</option>`;
+}
+
+function fillDistrictOptions(results) {
+  const sel = document.getElementById('addDistrictSel');
+  sel.innerHTML = '<option value="">-- Chọn phường --</option>';
+  results.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d.id;
+    o.textContent = `${d.name} (${d.score})`;
+    sel.appendChild(o);
+  });
+  if (results[0] && results[0].score <= 0.2) sel.value = results[0].id;
+}
+
+function fillStreetOptions(results) {
+  const sel = document.getElementById('addStreetSel');
+  sel.innerHTML = '<option value="">-- Chọn đường --</option>';
+  results.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = `${s.name} (${s.score})`;
+    sel.appendChild(o);
+  });
+  if (results[0] && results[0].score <= 0.2) sel.value = results[0].id;
+}
+
+// Tạo phường mới từ OSM, gắn vào dropdown
+async function onCreateDistrict() {
+  const ward = pendingGeo && pendingGeo.osmWard;
+  if (!ward) { alert('Không có tên phường từ OSM để tạo.'); return; }
+  try {
+    const d = await apiSend('/districts', 'POST', { name: ward, lname: ward, city: 1 });
+    districtMap[d.id] = d; // cập nhật resolver toàn cục
+    const sel = document.getElementById('addDistrictSel');
+    const o = document.createElement('option');
+    o.value = d.id; o.textContent = `${d.name} (mới)`;
+    sel.appendChild(o);
+    sel.value = d.id;
+    showToast(`Đã tạo phường #${d.id}: ${d.name}`);
+  } catch (e) {
+    console.error('createDistrict', e);
+    alert('Tạo phường thất bại.');
+  }
+}
+
+// Tạo đường mới từ OSM (cần district đã chọn), gắn vào dropdown
+async function onCreateStreet() {
+  const districtId = parseInt(document.getElementById('addDistrictSel').value);
+  if (!districtId) { alert('Hãy chọn/tạo phường trước khi tạo đường.'); return; }
+  const name = pendingGeo && pendingGeo.osmStreet;
+  if (!name) { alert('Không có tên đường từ OSM để tạo.'); return; }
+  try {
+    const s = await createStreetAjax({ name, type: 'Phố', district_id: districtId, city_id: 1 });
+    streetMap[s.id] = { id: s.id, name: s.name, district_id: districtId, city_id: 1, type: 'Phố' };
+    const sel = document.getElementById('addStreetSel');
+    let opt = [...sel.options].find(o => String(o.value) === String(s.id));
+    if (!opt) {
+      opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = `${s.name}${s.duplicate ? ' (đã có)' : ' (mới)'}`;
+      sel.appendChild(opt);
+    }
+    sel.value = s.id;
+    updateSubmitState();
+    showToast(`${s.duplicate ? 'Đường đã tồn tại' : 'Đã tạo đường'} #${s.id}: ${s.name}`);
+  } catch (e) {
+    console.error('createStreet', e);
+    alert('Tạo đường thất bại.');
+  }
+}
+
+// POST /api/streets có thể trả 409 (trùng) → dùng lại street đang có
+async function createStreetAjax(payload) {
+  const res = await fetch(API + '/streets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-API-Key': sessionStorage.getItem('admin_api_key') || '' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 409 && data.street) {
+    return { id: data.street.id, name: data.street.name, duplicate: true };
+  }
+  if (!res.ok) throw new Error(data.detail || `streets → ${res.status}`);
+  return data; // { id, name, ... }
+}
+
+// Submit: tạo Position mới với streets=[street_id]
+async function onSubmitPoint() {
+  const streetId = parseInt(document.getElementById('addStreetSel').value);
+  if (!streetId) { alert('Vui lòng chọn đường (street) trước khi tạo điểm.'); return; }
+  if (!pendingGeo) return;
+  const lat = pendingGeo.lat, lng = pendingGeo.lng;
+  const btn = document.getElementById('btnSubmitPoint');
+  btn.disabled = true;
+  try {
+    const resp = await apiSend('/positions/bulk', 'POST', [{ lat, lon: lng, streets: [streetId] }]);
+    const row = (resp.created || [])[0];
+    if (!row) throw new Error('Không nhận được dữ liệu điểm');
+    const pos = { id: row.id, x: row.long != null ? row.long : lng, y: row.lat != null ? row.lat : lat, streets: row.streets || [streetId] };
+    const m = createMarker(pos);
+    if (m) m.addTo(layerGroup);
+    closeAddModal();
+    showToast(`Đã tạo điểm #${pos.id}`);
+  } catch (e) {
+    console.error('createPosition', e);
+    alert('Tạo điểm thất bại.');
+    btn.disabled = false;
+  }
+}
+
+function updateSubmitState() {
+  const has = !!document.getElementById('addStreetSel').value;
+  document.getElementById('btnSubmitPoint').disabled = !has;
+}
+
+function closeAddModal() {
+  document.getElementById('addModal').style.display = 'none';
+  if (pendingMarker) { map.removeLayer(pendingMarker); pendingMarker = null; }
+  pendingGeo = null;
+}
+
+// ══════════════════════════════════════════════════
 //  DROPDOWN LOADERS
 // ══════════════════════════════════════════════════
 async function loadCities() {
@@ -563,6 +847,14 @@ function setupUIListeners() {
   });
 
   document.getElementById('btnMove').addEventListener('click', () => setMoveMode(!moveMode));
+
+  document.getElementById('btnAdd').addEventListener('click', () => setAddMode(!addMode));
+  document.getElementById('btnCreateDistrict').addEventListener('click', onCreateDistrict);
+  document.getElementById('btnCreateStreet').addEventListener('click', onCreateStreet);
+  document.getElementById('btnSubmitPoint').addEventListener('click', onSubmitPoint);
+  document.getElementById('btnCancelPoint').addEventListener('click', closeAddModal);
+  document.getElementById('btnCancelPointX').addEventListener('click', closeAddModal);
+  document.getElementById('addStreetSel').addEventListener('change', updateSubmitState);
 
   document.getElementById('btnClear').addEventListener('click', () => {
     clearMarkers();
