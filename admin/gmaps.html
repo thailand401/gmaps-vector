@@ -202,6 +202,14 @@
       padding: 2px 0; font-size: 12px; color: #3c4043; cursor: pointer;
     }
     .nearby-box .empty { color: #999; font-size: 12px; padding: 2px 0; }
+    .node-street-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 3px 2px; font-size: 12px; color: #3c4043;
+    }
+    .node-street-row button {
+      border: none; background: none; color: #d33; cursor: pointer;
+      font-size: 15px; line-height: 1;
+    }
     #nearbyCount { color: #34a853; font-weight: 600; }
   </style>
 </head>
@@ -268,8 +276,12 @@
   </div>
 
   <div class="modal-field">
-    <label>Đường lân cận ≤ 2km <span id="nearbyCount"></span></label>
-    <div id="nearbyStreets" class="nearby-box"></div>
+    <label>Đường lân cận ≤ 1km <span id="nearbyCount"></span></label>
+    <div class="row-inline">
+      <select id="nearbyStreetSel" multiple size="4"></select>
+      <button id="btnAddNearby" class="icon-btn" title="Thêm các đường đã chọn vào node">+</button>
+    </div>
+    <div id="nodeStreetsList" class="nearby-box"></div>
   </div>
 
   <div class="modal-actions">
@@ -289,7 +301,7 @@ const API          = location.hostname === 'localhost' ? 'http://localhost:4000/
 const DEFAULT_LAT  = 10.8231;
 const DEFAULT_LNG  = 106.6297;
 const DEFAULT_ZOOM = 12;
-const NEARBY_RADIUS_KM = 2; // bán kính gộp đường lân cận vào 1 node (Add điểm)
+const NEARBY_RADIUS_KM = 1; // bán kính gộp đường lân cận vào 1 node (Add điểm)
 
 // ══════════════════════════════════════════════════
 //  STATE
@@ -624,11 +636,12 @@ async function startAddPoint(lat, lng) {
   document.getElementById('addStreetOsm').textContent = 'OSM: đang tải…';
   resetSelect('addDistrictSel', '-- Chọn phường --');
   resetSelect('addStreetSel', '-- Chọn đường --');
+  clearNodeStreets();
   updateSubmitState();
   document.getElementById('addModal').style.display = 'block';
   map.panTo([rlat, rlng]);
 
-  // Gộp đường lân cận ≤2km (tham khảo "Set Node" bên maps.html)
+  // Đổ đường lân cận ≤1km vào dropdown (tham khảo "Set Node" bên maps.html)
   fillNearbyStreets(rlat, rlng);
 
   // 1) Reverse geocode → tên đường + phường OSM
@@ -707,30 +720,47 @@ function getNearbyStreets(lat, lng, radiusKm) {
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
-// Render checklist đường lân cận (mặc định tích chọn để gộp vào node)
+// Đổ danh sách đường lân cận vào dropdown để chọn thêm vào node (giống Set Node bên maps)
 function fillNearbyStreets(lat, lng) {
-  const box = document.getElementById('nearbyStreets');
+  const sel = document.getElementById('nearbyStreetSel');
   const list = getNearbyStreets(lat, lng, NEARBY_RADIUS_KM);
   document.getElementById('nearbyCount').textContent = list.length ? `(${list.length})` : '';
-  box.innerHTML = '';
-  if (!list.length) {
-    const d = document.createElement('div');
-    d.className = 'empty';
-    d.textContent = `Không có đường lân cận trong ${NEARBY_RADIUS_KM}km`;
-    box.appendChild(d);
-    return;
-  }
+  sel.innerHTML = '';
   list.forEach(s => {
-    const lbl = document.createElement('label');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox'; cb.className = 'nearby-cb'; cb.value = s.id; cb.checked = true;
-    lbl.appendChild(cb);
-    lbl.appendChild(document.createTextNode(' ' + s.name + ' '));
-    const sp = document.createElement('span');
-    sp.style.color = '#999'; sp.textContent = '#' + s.id;
-    lbl.appendChild(sp);
-    box.appendChild(lbl);
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = `${s.name} (#${s.id})`;
+    sel.appendChild(o);
   });
+}
+
+// Xoá danh sách đường đã thêm vào node
+function clearNodeStreets() {
+  document.getElementById('nodeStreetsList').innerHTML = '';
+}
+
+// Thêm các đường lân cận đang chọn (nhiều) vào danh sách node
+function addNearbyStreet() {
+  const sel = document.getElementById('nearbyStreetSel');
+  const ids = [...sel.selectedOptions].map(o => parseInt(o.value)).filter(Boolean);
+  if (!ids.length) return;
+  const listEl = document.getElementById('nodeStreetsList');
+  ids.forEach(id => {
+    if (listEl.querySelector(`[data-street-id="${id}"]`)) return; // đã có
+    const name = (streetMap[id] && streetMap[id].name) || ('#' + id);
+    const row = document.createElement('div');
+    row.className = 'node-street-row';
+    row.setAttribute('data-street-id', id);
+    const span = document.createElement('span');
+    span.textContent = `${name} (#${id})`;
+    const btn = document.createElement('button');
+    btn.type = 'button'; btn.textContent = '✕'; btn.title = 'Bỏ';
+    btn.addEventListener('click', () => row.remove());
+    row.appendChild(span);
+    row.appendChild(btn);
+    listEl.appendChild(row);
+  });
+  sel.selectedIndex = -1; // bỏ chọn sau khi thêm
 }
 
 // Tạo phường mới từ OSM, gắn vào dropdown
@@ -799,8 +829,8 @@ async function onSubmitPoint() {
   if (!streetId) { alert('Vui lòng chọn đường (street) trước khi tạo điểm.'); return; }
   if (!pendingGeo) return;
   const lat = pendingGeo.lat, lng = pendingGeo.lng;
-  // Gộp đường chính + đường lân cận (≤2km) được tích chọn vào chung 1 node
-  const nearbyIds = [...document.querySelectorAll('#nearbyStreets .nearby-cb:checked')].map(cb => parseInt(cb.value));
+  // Gộp đường chính + đường lân cận đã thêm vào chung 1 node
+  const nearbyIds = [...document.querySelectorAll('#nodeStreetsList [data-street-id]')].map(el => parseInt(el.getAttribute('data-street-id')));
   const streets = [...new Set([streetId, ...nearbyIds].filter(Boolean))];
   const btn = document.getElementById('btnSubmitPoint');
   btn.disabled = true;
@@ -928,6 +958,7 @@ function setupUIListeners() {
   document.getElementById('btnAdd').addEventListener('click', () => setAddMode(!addMode));
   document.getElementById('btnCreateDistrict').addEventListener('click', onCreateDistrict);
   document.getElementById('btnCreateStreet').addEventListener('click', onCreateStreet);
+  document.getElementById('btnAddNearby').addEventListener('click', addNearbyStreet);
   document.getElementById('btnSubmitPoint').addEventListener('click', onSubmitPoint);
   document.getElementById('btnCancelPoint').addEventListener('click', closeAddModal);
   document.getElementById('btnCancelPointX').addEventListener('click', closeAddModal);
