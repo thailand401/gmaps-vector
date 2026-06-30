@@ -94,6 +94,8 @@
       display: none;
       font-size: 13px;
       line-height: 1.6;
+      max-height: calc(100vh - 90px);
+      overflow-y: auto;
     }
     #infoPanel h3 {
       font-size: 14px;
@@ -484,6 +486,7 @@ async function onMarkerDragEnd(marker) {
   pos.y = newLat;
   pos.x = newLng;
   pos._geo = null; // toạ độ đổi → xoá cache geocode để lấy lại
+  pos._road = null;
   if (activeInfoPos === pos) showInfo(pos, marker._streetNames, marker);
 
   try {
@@ -589,6 +592,9 @@ function showInfo(pos, streetNames, marker) {
     ['Đường (osm)',  '<span id="infoOsmStreet">Đang tải…</span>'],
     ['Phường*',      wardLocal],
     ['Phường (osm)', '<span id="infoOsmWard">Đang tải…</span>'],
+    ['Loại đường (osm)', '<span id="infoRoadType">Đang tải…</span>'],
+    ['Chiều (osm)',      '<span id="infoRoadOneway">Đang tải…</span>'],
+    ['Cấm tải (osm)',    '<span id="infoRoadRestrict">Đang tải…</span>'],
     ['Tốc độ',  pos.speed  != null ? pos.speed + ' km/h' : '—'],
     ['Làn xe',  pos.lane   ?? '—'],
     ['Đỗ xe',   pos.park   != null ? (pos.park   ? 'Có' : 'Không') : '—'],
@@ -605,6 +611,8 @@ function showInfo(pos, streetNames, marker) {
 
   // Lấy street + district từ Nominatim (reverse geocoding)
   fillReverseGeocode(pos);
+  // Lấy thuộc tính đường (1 chiều, cấm tải, cao tốc…) từ Overpass
+  fillRoadInfo(pos);
 }
 
 // ── Reverse geocoding qua Nominatim: lat/lon → street, ward (phường) ──
@@ -639,6 +647,98 @@ async function fillReverseGeocode(pos) {
   } catch (e) {
     console.error('reverseGeocode', e);
     apply('', '');
+  }
+}
+
+// ══════════════════════════════════════════════════
+//  ROAD INFO (Overpass: 1 chiều, cấm tải, cao tốc…)
+// ══════════════════════════════════════════════════
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+
+// Khoảng cách điểm → đoạn thẳng (mét), xấp xỉ phẳng (đủ cho cự ly ngắn)
+function distPointToSegM(plat, plon, alat, alon, blat, blon) {
+  const mLat = 111320, mLon = 111320 * Math.cos(plat * Math.PI / 180);
+  const px = plon * mLon, py = plat * mLat;
+  const ax = alon * mLon, ay = alat * mLat;
+  const bx = blon * mLon, by = blat * mLat;
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// Tìm way [highway] gần (lat,lon) nhất trong bán kính radius (m) qua Overpass
+async function roadInfoAt(lat, lon, radius = 30) {
+  const ql = `[out:json][timeout:25];way(around:${radius},${lat},${lon})[highway];out tags geom;`;
+  const res = await fetch(OVERPASS_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'data=' + encodeURIComponent(ql),
+  });
+  if (!res.ok) throw new Error(`Overpass → ${res.status}`);
+  const data = await res.json();
+  let best = null, bestD = Infinity;
+  for (const w of (data.elements || [])) {
+    if (w.type !== 'way' || !Array.isArray(w.geometry)) continue;
+    let d = Infinity;
+    for (let i = 0; i + 1 < w.geometry.length; i++) {
+      const dd = distPointToSegM(lat, lon, w.geometry[i].lat, w.geometry[i].lon, w.geometry[i+1].lat, w.geometry[i+1].lon);
+      if (dd < d) d = dd;
+    }
+    if (d < bestD) { bestD = d; best = w; }
+  }
+  return best ? { tags: best.tags || {}, dist: bestD } : null;
+}
+
+// Diễn giải tag OSM → tiếng Việt
+function formatRoadInfo(tags) {
+  const HW = {
+    motorway: 'Cao tốc', motorway_link: 'Nhánh cao tốc',
+    trunk: 'Trục chính/QL', trunk_link: 'Nhánh trục chính',
+    primary: 'Đường chính', secondary: 'Đường thứ cấp', tertiary: 'Đường nhánh',
+    residential: 'Khu dân cư', service: 'Đường nội bộ', living_street: 'Đường nội khu',
+    unclassified: 'Chưa phân loại', pedestrian: 'Đi bộ', footway: 'Lối đi bộ', cycleway: 'Đường xe đạp',
+  };
+  const hw = tags.highway || '';
+  const loai = HW[hw] || hw || '—';
+
+  let oneway;
+  const ow = tags.oneway;
+  if (['yes', 'true', '1'].includes(ow)) oneway = '1 chiều';
+  else if (['-1', 'reverse'].includes(ow)) oneway = '1 chiều (ngược hướng vẽ)';
+  else if (ow === 'no' || ow === 'false') oneway = '2 chiều';
+  else if (hw === 'motorway' || hw === 'motorway_link') oneway = '1 chiều (mặc định cao tốc)';
+  else oneway = ow ? ow : '2 chiều / chưa rõ';
+
+  const restr = [];
+  if (['no', 'destination'].includes(tags.hgv)) restr.push('hạn chế xe tải');
+  if (['no', 'private'].includes(tags.access)) restr.push('hạn chế lưu thông');
+  if (tags.motor_vehicle === 'no') restr.push('cấm xe cơ giới');
+  if (tags.maxweight) restr.push('tải ≤ ' + tags.maxweight + 't');
+  if (tags.maxheight) restr.push('cao ≤ ' + tags.maxheight + 'm');
+  const camTai = restr.length ? restr.join(', ') : '—';
+
+  return { loai, oneway, camTai };
+}
+
+// Điền thuộc tính đường vào info panel (cache theo pos._road)
+async function fillRoadInfo(pos) {
+  const apply = (info) => {
+    if (activeInfoPos !== pos) return;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('infoRoadType',     info ? info.loai   : '—');
+    set('infoRoadOneway',   info ? info.oneway : '—');
+    set('infoRoadRestrict', info ? info.camTai : '—');
+  };
+  if (pos._road) { apply(pos._road); return; }
+  try {
+    const r = await roadInfoAt(pos.y, pos.x, 30);
+    pos._road = r ? formatRoadInfo(r.tags) : { loai: '—', oneway: '—', camTai: '—' };
+    apply(pos._road);
+  } catch (e) {
+    console.error('roadInfoAt', e);
+    apply(null);
   }
 }
 
