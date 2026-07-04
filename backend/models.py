@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Any
 
 
 class CategoryBase(BaseModel):
@@ -142,7 +142,10 @@ class Position(BaseModel):
     lane: Optional[int] = None
     tool: Optional[int] = None
     flooding: Optional[bool] = None
-    created_at: Optional[str] = None
+    ban_turn: Optional[Any] = None      # cấm rẽ
+    ban_vehicle: Optional[Any] = None   # cấm phương tiện
+    ban_hours: Optional[Any] = None     # cấm giờ
+    ban_weight: Optional[Any] = None    # cấm tải trọng
 
     class Config:
         from_attributes = True
@@ -158,6 +161,10 @@ class PositionCreate(BaseModel):
     lane: Optional[int] = None
     tool: Optional[int] = None
     flooding: Optional[bool] = None
+    ban_turn: Optional[Any] = None
+    ban_vehicle: Optional[Any] = None
+    ban_hours: Optional[Any] = None
+    ban_weight: Optional[Any] = None
 
 
 class PositionUpdate(BaseModel):
@@ -170,6 +177,10 @@ class PositionUpdate(BaseModel):
     lane: Optional[int] = None
     tool: Optional[int] = None
     flooding: Optional[bool] = None
+    ban_turn: Optional[Any] = None
+    ban_vehicle: Optional[Any] = None
+    ban_hours: Optional[Any] = None
+    ban_weight: Optional[Any] = None
 
 
 # ==================== GROUPS MODEL ====================

@@ -1,0 +1,414 @@
+[
+  {
+    "id": 1,
+    "name": "Võ Văn Kiệt"
+  },
+  {
+    "id": 2,
+    "name": "Quốc lộ 13"
+  },
+  {
+    "id": 3,
+    "name": "Đinh Bộ Lĩnh"
+  },
+  {
+    "id": 4,
+    "name": "Xô Viết Nghệ Tĩnh"
+  },
+  {
+    "id": 5,
+    "name": "Phạm Văn Đồng"
+  },
+  {
+    "id": 6,
+    "name": "Nguyễn Xí"
+  },
+  {
+    "id": 7,
+    "name": "Chu Văn An"
+  },
+  {
+    "id": 8,
+    "name": "Xa lộ Hà Nội"
+  },
+  {
+    "id": 9,
+    "name": "Võ Nguyên Giáp"
+  },
+  {
+    "id": 10,
+    "name": "Mai Chí Thọ"
+  },
+  {
+    "id": 11,
+    "name": "Nguyễn Thị Định"
+  },
+  {
+    "id": 12,
+    "name": "Đồng Văn Cống"
+  },
+  {
+    "id": 13,
+    "name": "Nguyễn Duy Trinh"
+  },
+  {
+    "id": 14,
+    "name": "Vành đai 2"
+  },
+  {
+    "id": 15,
+    "name": "Liên Phường"
+  },
+  {
+    "id": 16,
+    "name": "Võ Chí Công"
+  },
+  {
+    "id": 17,
+    "name": "Đỗ Xuân Hợp"
+  },
+  {
+    "id": 18,
+    "name": "Lã Xuân Oai"
+  },
+  {
+    "id": 19,
+    "name": "Nguyễn Xiển"
+  },
+  {
+    "id": 20,
+    "name": "Quốc lộ 22"
+  },
+  {
+    "id": 21,
+    "name": "Trường Chinh"
+  },
+  {
+    "id": 22,
+    "name": "Cộng Hòa"
+  },
+  {
+    "id": 23,
+    "name": "Hoàng Văn Thụ"
+  },
+  {
+    "id": 24,
+    "name": "Quang Trung"
+  },
+  {
+    "id": 25,
+    "name": "Tô Ký"
+  },
+  {
+    "id": 26,
+    "name": "Nguyễn Ảnh Thủ"
+  },
+  {
+    "id": 27,
+    "name": "Phan Văn Hớn"
+  },
+  {
+    "id": 28,
+    "name": "Lý Thái Tổ"
+  },
+  {
+    "id": 29,
+    "name": "Quốc lộ 1A Bình Chánh"
+  },
+  {
+    "id": 30,
+    "name": "Kinh Dương Vương"
+  },
+  {
+    "id": 31,
+    "name": "An Dương Vương"
+  },
+  {
+    "id": 32,
+    "name": "Nguyễn Văn Linh"
+  },
+  {
+    "id": 33,
+    "name": "Hồng Bàng"
+  },
+  {
+    "id": 34,
+    "name": "Nguyễn Hữu Thọ"
+  },
+  {
+    "id": 35,
+    "name": "Huỳnh Tấn Phát"
+  },
+  {
+    "id": 36,
+    "name": "Nguyễn Chí Thanh"
+  },
+  {
+    "id": 37,
+    "name": "Nguyễn Tất Thành"
+  },
+  {
+    "id": 38,
+    "name": "Tôn Đức Thắng"
+  },
+  {
+    "id": 39,
+    "name": "Khánh Hội"
+  },
+  {
+    "id": 40,
+    "name": "Điện Biên Phủ"
+  },
+  {
+    "id": 41,
+    "name": "Nguyễn Thị Minh Khai"
+  },
+  {
+    "id": 42,
+    "name": "Võ Thị Sáu"
+  },
+  {
+    "id": 43,
+    "name": "Nam Kỳ Khởi Nghĩa"
+  },
+  {
+    "id": 44,
+    "name": "Hai Bà Trưng"
+  },
+  {
+    "id": 45,
+    "name": "Pasteur"
+  },
+  {
+    "id": 46,
+    "name": "Cách Mạng Tháng Tám"
+  },
+  {
+    "id": 47,
+    "name": "Lý Thường Kiệt"
+  },
+  {
+    "id": 48,
+    "name": "Ba Tháng Hai"
+  },
+  {
+    "id": 49,
+    "name": "Nguyễn Văn Cừ"
+  },
+  {
+    "id": 50,
+    "name": "Trần Hưng Đạo"
+  },
+  {
+    "id": 51,
+    "name": "Tân Kỳ Tân Quý"
+  },
+  {
+    "id": 52,
+    "name": "Tân Sơn Nhì"
+  },
+  {
+    "id": 53,
+    "name": "Lê Tấn Quốc"
+  },
+  {
+    "id": 54,
+    "name": "Lê Trọng Tấn"
+  },
+  {
+    "id": 55,
+    "name": "Nguyễn Cửu Đàm"
+  },
+  {
+    "id": 56,
+    "name": "Nguyễn Quý Anh"
+  },
+  {
+    "id": 57,
+    "name": "Cầu Xéo"
+  },
+  {
+    "id": 58,
+    "name": "Diệp Minh Châu"
+  },
+  {
+    "id": 59,
+    "name": "Trương Vĩnh Ký"
+  },
+  {
+    "id": 60,
+    "name": "Gò Dầu"
+  },
+  {
+    "id": 61,
+    "name": "Độc Lập"
+  },
+  {
+    "id": 62,
+    "name": "Luỹ Bán Bích"
+  },
+  {
+    "id": 63,
+    "name": "Vườn Lài"
+  },
+  {
+    "id": 64,
+    "name": "Thống Nhất"
+  },
+  {
+    "id": 65,
+    "name": "Hồng Lạc"
+  },
+  {
+    "id": 66,
+    "name": "Âu Cơ"
+  },
+  {
+    "id": 67,
+    "name": "Thoại Ngọc Hầu"
+  },
+  {
+    "id": 68,
+    "name": "Đồng Đen"
+  },
+  {
+    "id": 69,
+    "name": "Lạc Long Quân"
+  },
+  {
+    "id": 70,
+    "name": "Phan Huy Ích"
+  },
+  {
+    "id": 71,
+    "name": "Trương Công Định"
+  },
+  {
+    "id": 72,
+    "name": "Hoàng Hoa Thám"
+  },
+  {
+    "id": 73,
+    "name": "C12 - Sân Bay"
+  },
+  {
+    "id": 74,
+    "name": "Bình Thới"
+  },
+  {
+    "id": 75,
+    "name": "Lãnh Binh Thăng"
+  },
+  {
+    "id": 76,
+    "name": "Ông ích Khiêm"
+  },
+  {
+    "id": 77,
+    "name": "Hoà Bình"
+  },
+  {
+    "id": 78,
+    "name": "Lê Đại Hành"
+  },
+  {
+    "id": 79,
+    "name": "Nguyễn Thị Nhỏ"
+  },
+  {
+    "id": 80,
+    "name": "Thiên Phước"
+  },
+  {
+    "id": 81,
+    "name": "Lữ Gia"
+  },
+  {
+    "id": 82,
+    "name": "Tô Hiến Thành"
+  },
+  {
+    "id": 83,
+    "name": "Thành Thái"
+  },
+  {
+    "id": 84,
+    "name": "Bắc Hải"
+  },
+  {
+    "id": 85,
+    "name": "Sư Vạn Hạnh"
+  },
+  {
+    "id": 86,
+    "name": "Đồng Nai"
+  },
+  {
+    "id": 87,
+    "name": "Hồ Bá Kiện"
+  },
+  {
+    "id": 88,
+    "name": "Nguyễn Tri Phương"
+  },
+  {
+    "id": 89,
+    "name": "3 Tháng 2"
+  },
+  {
+    "id": 90,
+    "name": "Lê Hồng Phong"
+  },
+  {
+    "id": 91,
+    "name": "Cao Thắng"
+  },
+  {
+    "id": 92,
+    "name": "Ngô Gia Tự"
+  },
+  {
+    "id": 93,
+    "name": "Hùng Vương"
+  },
+  {
+    "id": 94,
+    "name": "Trần Phú"
+  },
+  {
+    "id": 95,
+    "name": "Nguyễn Trãi"
+  },
+  {
+    "id": 96,
+    "name": "Minh Phụng"
+  },
+  {
+    "id": 97,
+    "name": "Bình Tiên"
+  },
+  {
+    "id": 98,
+    "name": "Phạm Phú Thứ"
+  },
+  {
+    "id": 99,
+    "name": "Hậu Giang"
+  },
+  {
+    "id": 100,
+    "name": "Nguyễn Thị Nhỏ Quận 6"
+  },
+  {
+    "id": 101,
+    "name": "Nguyễn Sơn"
+  },
+  {
+    "id": 102,
+    "name": "Văn Cao"
+  },
+  {
+    "id": 103,
+    "name": "Đặng Nguyên Cẩn"
+  }
+]

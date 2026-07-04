@@ -176,6 +176,7 @@
     #addModal select, #setNodeModal select {
       border: 1px solid #d0d0d0; border-radius: 8px;
       padding: 6px 8px; font-size: 13px; background: #fafafa; outline: none;
+      width: 100%; box-sizing: border-box;
     }
     #addModal .icon-btn, #setNodeModal .icon-btn {
       border: none; border-radius: 8px; padding: 6px 11px;
@@ -444,6 +445,26 @@
     <div id="setNodeStreetsList" class="nearby-box"></div>
   </div>
 
+  <div class="modal-field">
+    <label>Cấm rẽ — point lân cận ≤ 500m <span id="setNodeBanTurnCount"></span></label>
+    <select id="setNodeBanTurn" multiple size="4"></select>
+  </div>
+
+  <div class="modal-field">
+    <label>Cấm phương tiện</label>
+    <select id="setNodeBanVehicle" multiple size="3"></select>
+  </div>
+
+  <div class="modal-field">
+    <label>Cấm giờ</label>
+    <select id="setNodeBanHours" multiple size="5"></select>
+  </div>
+
+  <div class="modal-field">
+    <label>Cấm tải trọng (tấn)</label>
+    <select id="setNodeBanWeight" multiple size="4"></select>
+  </div>
+
   <div class="modal-actions">
     <button id="btnSetNodeSave">Lưu</button>
     <button id="btnSetNodeCancel">Huỷ</button>
@@ -597,6 +618,21 @@ const DEFAULT_LAT  = 10.8231;
 const DEFAULT_LNG  = 106.6297;
 const DEFAULT_ZOOM = 12;
 const NEARBY_RADIUS_KM = 1; // bán kính gộp đường lân cận vào 1 node (Add điểm)
+const BAN_TURN_RADIUS_KM = 0.5; // bán kính (km) point lân cận cho "cấm rẽ" (500m)
+const BAN_VEHICLE_OPTIONS = ['car', 'truck', 'bus'];
+const BAN_HOURS_OPTIONS = [
+  { id: 1,  label: '06:00 - 09:00' },
+  { id: 2,  label: '16:00 - 20:00' },
+  { id: 3,  label: '06:00 - 22:00' },
+  { id: 4,  label: '20:00 - 05:00' },
+  { id: 5,  label: '19:00 - 23:00' },
+  { id: 6,  label: '06:00 - 08:30' },
+  { id: 7,  label: '09:00 - 16:00' },
+  { id: 8,  label: '16:00 - 19:00' },
+  { id: 9,  label: '06:00 - 21:00' },
+  { id: 10, label: '19:00 - 24:00' },
+];
+const BAN_WEIGHT_OPTIONS = [0.95, 2, 2.5, 3.5, 5, 10, 18, 30];
 const GROUP_RADIUS_KM = 1; // bán kính (km) gom đường quanh điểm cho "Create Group"
 const GROUP_OUTER_MULT = 2;  // vùng gấp đôi bán kính để bổ sung đường thủ công vào main list
 const DEFAULT_MARKER_COLOR = '#4285f4'; // màu marker mặc định (street chưa thuộc group nào)
@@ -628,12 +664,15 @@ let cgEditId        = null; // modal đang sửa group id nào (null = tạo m�
 let selectedStreetId = null; // đường đang chọn trên toolbar (để sửa street)
 let esEditId         = null; // street id đang sửa trong modal
 let esStreetPoints   = [];   // [{id,lat,lng}] các point của street đang sửa
+let esStoredPositions = [];  // [±id] positions đã lưu (giữ dấu âm = 1 chiều)
+let esHiliteMarkers  = [];   // marker đang tô sáng theo lựa chọn trong esPathSel
 let pointPickMode   = null;  // 'start' | 'end' | null — chế độ chọn điểm đầu/đích
 let startPickMarker = null, endPickMarker = null;   // marker cờ người dùng đặt
 let startNearestId  = null, endNearestId  = null;   // id position gần nhất đang tô màu
 let startTempMarker = null, endTempMarker = null;   // marker tạm khi nearest không hiển thị
 const PT_START_COLOR = '#0b8043';  // xanh lá — nearest của điểm đầu
 const PT_END_COLOR   = '#d93025';  // đỏ — nearest của điểm đích
+const ES_SELECT_COLOR = '#ff9800'; // cam — point đang chọn trong esPathSel
 
 // ══════════════════════════════════════════════════
 //  HELPERS
@@ -1393,6 +1432,21 @@ function getNearbyStreets(lat, lng, radiusKm) {
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 }
 
+// Các point (marker đã load) trong bán kính radiusKm quanh (lat,lng), trừ chính nó
+function getNearbyPoints(lat, lng, radiusKm, excludeId) {
+  const out = [];
+  if (layerGroup) {
+    layerGroup.eachLayer(layer => {
+      const p = layer._pos;
+      if (!p || p.y == null || p.x == null || p.id === excludeId) return;
+      if (haversineKm(lat, lng, p.y, p.x) <= radiusKm) {
+        out.push({ id: p.id, lat: Number(p.y), lng: Number(p.x) });
+      }
+    });
+  }
+  return out.sort((a, b) => a.id - b.id);
+}
+
 // Đổ danh sách đường lân cận vào dropdown để chọn thêm vào node (giống Set Node bên maps)
 function fillNearbyStreets(lat, lng) {
   const sel = document.getElementById('nearbyStreetSel');
@@ -1574,6 +1628,54 @@ function openSetNode() {
   listEl.innerHTML = '';
   (pos.streets || []).forEach(id => appendStreetRow(listEl, id, updateSetNodeSaveState));
   updateSetNodeSaveState();
+
+  // ── Cấm rẽ: point lân cận ≤500m ──
+  const btSel = document.getElementById('setNodeBanTurn');
+  const nearbyPts = getNearbyPoints(pos.y, pos.x, BAN_TURN_RADIUS_KM, pos.id);
+  document.getElementById('setNodeBanTurnCount').textContent = nearbyPts.length ? `(${nearbyPts.length})` : '';
+  const banTurn = Array.isArray(pos.ban_turn) ? pos.ban_turn.map(Number) : [];
+  btSel.innerHTML = '';
+  nearbyPts.forEach(p => {
+    const o = document.createElement('option');
+    o.value = String(p.id);
+    o.textContent = `#${p.id} (${p.lat.toFixed(4)}, ${p.lng.toFixed(4)})`;
+    if (banTurn.includes(p.id)) o.selected = true;
+    btSel.appendChild(o);
+  });
+
+  // ── Cấm phương tiện ──
+  const bvSel = document.getElementById('setNodeBanVehicle');
+  const banVeh = Array.isArray(pos.ban_vehicle) ? pos.ban_vehicle : [];
+  bvSel.innerHTML = '';
+  BAN_VEHICLE_OPTIONS.forEach(v => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = v;
+    if (banVeh.includes(v)) o.selected = true;
+    bvSel.appendChild(o);
+  });
+
+  // ── Cấm giờ ──
+  const bhSel = document.getElementById('setNodeBanHours');
+  const banHrs = Array.isArray(pos.ban_hours) ? pos.ban_hours.map(Number) : [];
+  bhSel.innerHTML = '';
+  BAN_HOURS_OPTIONS.forEach(h => {
+    const o = document.createElement('option');
+    o.value = String(h.id); o.textContent = `${h.id}. ${h.label}`;
+    if (banHrs.includes(h.id)) o.selected = true;
+    bhSel.appendChild(o);
+  });
+
+  // ── Cấm tải trọng ──
+  const bwSel = document.getElementById('setNodeBanWeight');
+  const banW = Array.isArray(pos.ban_weight) ? pos.ban_weight.map(Number) : [];
+  bwSel.innerHTML = '';
+  BAN_WEIGHT_OPTIONS.forEach(w => {
+    const o = document.createElement('option');
+    o.value = String(w); o.textContent = `${w} tấn`;
+    if (banW.includes(w)) o.selected = true;
+    bwSel.appendChild(o);
+  });
+
   document.getElementById('setNodeModal').style.display = 'block';
 }
 
@@ -1602,12 +1704,27 @@ async function saveSetNode() {
   const streets = [...document.querySelectorAll('#setNodeStreetsList [data-street-id]')]
     .map(el => parseInt(el.getAttribute('data-street-id'))).filter(Boolean);
   if (!streets.length) { alert('Node cần ít nhất 1 đường.'); return; }
+  const ban_turn = [...document.getElementById('setNodeBanTurn').selectedOptions]
+    .map(o => parseInt(o.value)).filter(v => !Number.isNaN(v));
+  const ban_vehicle = [...document.getElementById('setNodeBanVehicle').selectedOptions]
+    .map(o => o.value);
+  const ban_hours = [...document.getElementById('setNodeBanHours').selectedOptions]
+    .map(o => parseInt(o.value)).filter(v => !Number.isNaN(v));
+  const ban_weight = [...document.getElementById('setNodeBanWeight').selectedOptions]
+    .map(o => parseFloat(o.value)).filter(v => !Number.isNaN(v));
   const btn = document.getElementById('btnSetNodeSave');
   btn.disabled = true;
   try {
     // pos_id có → backend UPDATE streets + đồng bộ Streets.positions
-    await apiSend('/positions/bulk', 'POST', [{ lat: pos.y, lon: pos.x, streets, pos_id: pos.id }]);
+    await apiSend('/positions/bulk', 'POST', [{
+      lat: pos.y, lon: pos.x, streets, pos_id: pos.id,
+      ban_turn, ban_vehicle, ban_hours, ban_weight,
+    }]);
     pos.streets = streets;
+    pos.ban_turn = ban_turn;
+    pos.ban_vehicle = ban_vehicle;
+    pos.ban_hours = ban_hours;
+    pos.ban_weight = ban_weight;
     const names = streets.map(id => streetMap[id] && streetMap[id].name).filter(Boolean).join(', ') || '—';
     const marker = findMarkerByPos(pos);
     if (marker) {
@@ -2009,6 +2126,54 @@ function esRenderPath() {
   document.getElementById('esPathCount').textContent = `(${ordered.length})`;
 }
 
+// Render dropdown 2 từ positions đã lưu (giữ nguyên thứ tự + dấu âm 1 chiều)
+function esRenderStoredPath() {
+  const pathSel = document.getElementById('esPathSel');
+  pathSel.innerHTML = '';
+  const valid = esStoredPositions.filter(v => esStreetPoints.some(p => p.id === Math.abs(v)));
+  valid.forEach((v, i) => {
+    const o = document.createElement('option');
+    o.value = String(v);
+    o.textContent = `${i + 1}. #${v}`;
+    pathSel.appendChild(o);
+  });
+  document.getElementById('esPathCount').textContent = `(${valid.length})`;
+}
+
+// Tìm marker trên map theo id point
+function esFindMarker(pointId) {
+  let found = null;
+  if (layerGroup) layerGroup.eachLayer(m => { if (m._pos && m._pos.id === pointId) found = m; });
+  return found;
+}
+
+// Trả các marker đang tô sáng về màu nền
+function esClearHighlight() {
+  esHiliteMarkers.forEach(m => { if (m && m._pos) m.setIcon(circleIcon(posBaseColor(m._pos))); });
+  esHiliteMarkers = [];
+}
+
+// Tô sáng + pan tới marker của các point đang chọn trong esPathSel
+function esHighlightSelected() {
+  esClearHighlight();
+  const pathSel = document.getElementById('esPathSel');
+  const bounds = L.latLngBounds();
+  let n = 0;
+  [...pathSel.selectedOptions].forEach(o => {
+    const id = Math.abs(parseInt(o.value));
+    const m = esFindMarker(id);
+    if (!m) return;
+    m.setIcon(circleIcon(ES_SELECT_COLOR));
+    esHiliteMarkers.push(m);
+    bounds.extend(m.getLatLng());
+    n++;
+  });
+  if (n && map) {
+    if (n === 1) map.panTo(bounds.getCenter());
+    else map.fitBounds(bounds, { padding: [60, 60] });
+  }
+}
+
 // Nút Oneway: đảo dấu (âm/dương) các option đang chọn ở dropdown 2
 function esOneway() {
   const pathSel = document.getElementById('esPathSel');
@@ -2062,12 +2227,34 @@ async function openEditStreetModal(streetId) {
   document.getElementById('esToll').checked = !!full.toll;
   document.getElementById('esFlooding').checked = !!full.flooding;
 
-  // các point của street (từ DB)
+  // các point của street: ưu tiên field positions của street, fallback query theo street_id
+  const stored = Array.isArray(full.positions) ? full.positions : [];
+  const storedSigned = stored.map(v => parseInt(v)).filter(v => !Number.isNaN(v));
+  const storedIds = storedSigned.map(v => Math.abs(v));
+
+  // Nạp toạ độ: lấy nhanh theo street_id, sau đó bổ sung các id còn thiếu từ field positions
+  const coordMap = new Map();
   let pts = [];
   try { pts = await apiFetch('/positions?street_id=' + streetId); } catch (e) { console.error('get points', e); }
-  esStreetPoints = (pts || [])
-    .filter(p => p.x != null && p.y != null)
-    .map(p => ({ id: p.id, lat: Number(p.y), lng: Number(p.x) }));
+  (pts || []).forEach(p => {
+    if (p.x != null && p.y != null) coordMap.set(p.id, { id: p.id, lat: Number(p.y), lng: Number(p.x) });
+  });
+  const missing = [...new Set(storedIds)].filter(id => !coordMap.has(id));
+  if (missing.length) {
+    const fetched = await Promise.all(missing.map(id =>
+      apiFetch('/positions/' + id).catch(e => { console.error('get point', id, e); return null; })
+    ));
+    fetched.forEach(p => {
+      if (p && p.x != null && p.y != null) coordMap.set(p.id, { id: p.id, lat: Number(p.y), lng: Number(p.x) });
+    });
+  }
+
+  // Thứ tự: theo field positions trước, các point còn lại append phía sau
+  const orderedIds = [];
+  const seen = new Set();
+  storedIds.forEach(id => { if (coordMap.has(id) && !seen.has(id)) { orderedIds.push(id); seen.add(id); } });
+  coordMap.forEach((_, id) => { if (!seen.has(id)) { orderedIds.push(id); seen.add(id); } });
+  esStreetPoints = orderedIds.map(id => coordMap.get(id));
 
   // dropdown 1 (start): tất cả point; mặc định = |positions[0]| nếu có, else point đầu
   const startSel = document.getElementById('esStartSel');
@@ -2079,18 +2266,21 @@ async function openEditStreetModal(streetId) {
     startSel.appendChild(o);
   });
   let defStart = null;
-  const stored = Array.isArray(full.positions) ? full.positions : [];
-  if (stored.length) defStart = Math.abs(parseInt(stored[0]));
+  if (storedIds.length) defStart = storedIds[0];
   if (defStart == null && esStreetPoints.length) defStart = esStreetPoints[0].id;
   if (defStart != null && esStreetPoints.some(p => p.id === defStart)) startSel.value = String(defStart);
 
-  esRenderPath();
+  // Giữ nguyên thứ tự + dấu âm (1 chiều) từ positions đã lưu để hiển thị đúng
+  esStoredPositions = storedSigned;
+  esRenderStoredPath();
+  document.getElementById('esSave').disabled = false;
   document.getElementById('editStreetModal').style.display = 'block';
 }
 
 function closeEditStreetModal() {
   const el = document.getElementById('editStreetModal');
   if (el) el.style.display = 'none';
+  esClearHighlight();
   esEditId = null;
 }
 
@@ -2266,6 +2456,7 @@ function setupUIListeners() {
   document.getElementById('esCancel').addEventListener('click', closeEditStreetModal);
   document.getElementById('esCloseX').addEventListener('click', closeEditStreetModal);
   document.getElementById('esStartSel').addEventListener('change', esRenderPath);
+  document.getElementById('esPathSel').addEventListener('change', esHighlightSelected);
   document.getElementById('esOneway').addEventListener('click', esOneway);
   document.getElementById('btnCreateDistrict').addEventListener('click', onCreateDistrict);
   document.getElementById('btnCreateStreet').addEventListener('click', onCreateStreet);

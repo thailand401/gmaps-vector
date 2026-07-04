@@ -33,7 +33,10 @@ class MapsService:
             'tool': item.get('tool'),
             'flooding': item.get('flooding'),
             'streets': item.get('streets'),
-            'created_at': item.get('created_at')
+            'ban_turn': item.get('ban_turn'),
+            'ban_vehicle': item.get('ban_vehicle'),
+            'ban_hours': item.get('ban_hours'),
+            'ban_weight': item.get('ban_weight'),
         }
     @staticmethod
     async def get_all_cities() -> List[City]:
@@ -423,7 +426,8 @@ class MapsService:
             # include streets JSON if provided on model
             if getattr(data, 'street_id', None):
                 payload['streets'] = [data.street_id]
-            for field in ("ban", "speed", "park", "lane", "tool", "flooding"):
+            for field in ("ban", "speed", "park", "lane", "tool", "flooding",
+                          "ban_turn", "ban_vehicle", "ban_hours", "ban_weight"):
                 val = getattr(data, field)
                 if val is not None:
                     payload[field] = val
@@ -481,6 +485,8 @@ class MapsService:
                 lon     = float(pt.get('lon'))
                 streets = [int(s) for s in (pt.get('streets') or [])]
                 pos_id  = pt.get('pos_id')
+                # Optional ban fields (only written when the key is present in payload)
+                ban_fields = {k: pt[k] for k in ("ban_turn", "ban_vehicle", "ban_hours", "ban_weight") if k in pt}
 
                 if pos_id:
                     # ── UPDATE existing position ──────────────────────────────────
@@ -489,7 +495,7 @@ class MapsService:
                     existing_pos = supabase.table("Positions").select("streets").eq("id", pos_id).limit(1).execute()
                     old_streets = list((existing_pos.data[0].get('streets') or []) if existing_pos.data else [])
 
-                    result = supabase.table("Positions").update({"long": lon, "lat": lat, "streets": streets}).eq("id", pos_id).execute()
+                    result = supabase.table("Positions").update({"long": lon, "lat": lat, "streets": streets, **ban_fields}).eq("id", pos_id).execute()
                     if result.data:
                         created.append(result.data[0])
 
@@ -518,7 +524,7 @@ class MapsService:
                 else:
                     # ── INSERT new position ───────────────────────────────────────
                     next_id = _next_id("Positions")
-                    payload = {"id": next_id, "long": lon, "lat": lat, "streets": streets}
+                    payload = {"id": next_id, "long": lon, "lat": lat, "streets": streets, **ban_fields}
                     result = supabase.table("Positions").insert(payload).execute()
                     if not result.data:
                         raise Exception("Failed to insert position")
