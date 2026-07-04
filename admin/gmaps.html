@@ -219,6 +219,32 @@
       font-size: 15px; line-height: 1;
     }
     #nearbyCount { color: #34a853; font-weight: 600; }
+
+    /* ── Opacity slider (điều chỉnh độ mờ tile nền) ── */
+    .opacity-control {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.4);
+      padding: 8px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .opacity-control .opacity-icon { font-size: 14px; line-height: 1; }
+    .opacity-control input[type=range] {
+      -webkit-appearance: slider-vertical;
+      appearance: slider-vertical;
+      writing-mode: vertical-lr;
+      direction: rtl;
+      width: 8px;
+      height: 120px;
+      cursor: pointer;
+      accent-color: #4285f4;
+    }
+    .opacity-control #tileOpacityVal {
+      font-size: 11px; color: #555; font-variant-numeric: tabular-nums;
+    }
   </style>
 </head>
 <body>
@@ -346,6 +372,7 @@ const LAST_MARKER_KEY = 'gmaps_last_marker'; // localStorage: toạ độ marker
 //  STATE
 // ══════════════════════════════════════════════════
 let map;
+let tileLayer   = null;   // lớp tile nền (điều chỉnh opacity)
 let layerGroup  = null;   // L.LayerGroup chứa toàn bộ marker
 let pathLayer   = null;   // L.LayerGroup chứa polyline path của street
 let streetMap   = {};     // id → street object
@@ -416,19 +443,42 @@ function hideInfo() {
 function initMap() {
   map = L.map('map', { zoomControl: true }).setView([DEFAULT_LAT, DEFAULT_LNG], DEFAULT_ZOOM);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
   }).addTo(map);
 
   layerGroup = L.layerGroup().addTo(map);
   pathLayer  = L.layerGroup().addTo(map);
+  addOpacityControl();
 
   // Click map khi đang ở chế độ "Add điểm" → bắt đầu thêm điểm
   map.on('click', e => {
     if (!addMode) return;
     startAddPoint(e.latlng.lat, e.latlng.lng);
   });
+}
+
+// Slider dọc chỉnh opacity tile nền (giúp thấy path rõ hơn)
+function addOpacityControl() {
+  const ctrl = L.control({ position: 'topright' });
+  ctrl.onAdd = function () {
+    const div = L.DomUtil.create('div', 'leaflet-control opacity-control');
+    div.innerHTML =
+      '<span class="opacity-icon" title="Độ mờ nền">🗺️</span>' +
+      '<input type="range" id="tileOpacity" min="0" max="100" value="100" orient="vertical" aria-label="Độ mờ nền" />' +
+      '<span id="tileOpacityVal">100%</span>';
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    const slider = div.querySelector('#tileOpacity');
+    const val = div.querySelector('#tileOpacityVal');
+    slider.addEventListener('input', () => {
+      if (tileLayer) tileLayer.setOpacity(slider.value / 100);
+      val.textContent = slider.value + '%';
+    });
+    return div;
+  };
+  ctrl.addTo(map);
 }
 
 // ══════════════════════════════════════════════════
