@@ -845,6 +845,93 @@ class MapsService:
             raise Exception(f"Pathfind failed: {str(e)}")
 
     @staticmethod
+    async def nearest_position(qlat: float, qlon: float, top_k: int = 3) -> dict:
+        """Find the single nearest position to (qlat, qlon) with a 2-step Group strategy:
+          1) pick the `top_k` nearest Groups by (lat_center, long_center)
+          2) load ONLY those groups' positions (via Streets.positions) — not the whole DB
+          3) find the nearest position inside EACH group
+          4) return the closest among the per-group winners
+        Falls back to a full DB scan when there are no groups / no group positions.
+        Returns: {found, position: {id,lat,lon,streets,street_names}|None, distance_m, group_id}
+        """
+        import math
+
+        def haversine_m(lat1, lon1, lat2, lon2):
+            R = 6_371_000
+            phi1, phi2 = math.radians(lat1), math.radians(lat2)
+            dphi = math.radians(lat2 - lat1)
+            dlam = math.radians(lon2 - lon1)
+            a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+        best_pos, best_d, best_gid = None, float("inf"), None
+
+        # 1) Nearest `top_k` groups by their center
+        groups_res = supabase.table("Groups").select("id, lat_center, long_center, streets").execute()
+        groups = [g for g in (groups_res.data or [])
+                  if g.get("lat_center") is not None and g.get("long_center") is not None]
+        groups.sort(key=lambda g: haversine_m(qlat, qlon, float(g["lat_center"]), float(g["long_center"])))
+        nearest_groups = groups[:top_k]
+
+        # 2) Group streets → position ids (via Streets.positions); batch-load ONLY those positions
+        all_street_ids = sorted({int(s) for g in nearest_groups for s in (g.get("streets") or [])})
+        if all_street_ids:
+            sres = supabase.table("Streets").select("id, positions").in_("id", all_street_ids).execute()
+            street_positions = {s["id"]: [int(p) for p in (s.get("positions") or [])] for s in (sres.data or [])}
+            group_pos_ids: dict = {}
+            all_pos_ids: set = set()
+            for g in nearest_groups:
+                pids = set()
+                for sid in (g.get("streets") or []):
+                    pids.update(street_positions.get(int(sid), []))
+                group_pos_ids[g["id"]] = pids
+                all_pos_ids.update(pids)
+            if all_pos_ids:
+                pres = supabase.table("Positions").select("*").in_("id", list(all_pos_ids)).execute()
+                pos_by_id = {p["id"]: p for p in (pres.data or [])
+                             if p.get("lat") is not None and p.get("long") is not None}
+                # 3) nearest position inside each group  +  4) compare the winners
+                for g in nearest_groups:
+                    g_pos, g_d = None, float("inf")
+                    for pid in group_pos_ids.get(g["id"], ()):  # chỉ xét position của group này
+                        pos = pos_by_id.get(pid)
+                        if not pos:
+                            continue
+                        d = haversine_m(qlat, qlon, float(pos["lat"]), float(pos["long"]))
+                        if d < g_d:
+                            g_d, g_pos = d, pos
+                    if g_pos is not None and g_d < best_d:
+                        best_d, best_pos, best_gid = g_d, g_pos, g["id"]
+
+        # Fallback: không có group / group rỗng → quét toàn bộ DB (đúng tuyệt đối)
+        if best_pos is None:
+            res = supabase.table("Positions").select("id, lat, long, streets").execute()
+            for p in (res.data or []):
+                if p.get("lat") is None or p.get("long") is None:
+                    continue
+                d = haversine_m(qlat, qlon, float(p["lat"]), float(p["long"]))
+                if d < best_d:
+                    best_d, best_pos, best_gid = d, p, None
+
+        if best_pos is None:
+            return {"found": False, "position": None, "distance_m": None, "group_id": None}
+
+        # Resolve street names for the chosen position
+        street_ids = best_pos.get("streets") or []
+        smap = {}
+        if street_ids:
+            sr = supabase.table("Streets").select("id, name").in_("id", street_ids).execute()
+            smap = {s["id"]: s["name"] for s in (sr.data or [])}
+        position = {
+            "id": best_pos["id"],
+            "lat": best_pos["lat"],
+            "lon": best_pos["long"],
+            "streets": street_ids,
+            "street_names": [smap.get(sid, str(sid)) for sid in street_ids],
+        }
+        return {"found": True, "position": position, "distance_m": round(best_d), "group_id": best_gid}
+
+    @staticmethod
     async def search_nearest(points: list) -> dict:
         """
         1 query point  → return nearest DB position.
@@ -951,6 +1038,23 @@ class MapsService:
             return ". ".join(instructions) + "."
 
         try:
+            # ── Single-point: reuse the extracted 2-step group-based nearest search ──
+            if len(points) < 2:
+                res = await MapsService.nearest_position(float(points[0]["lat"]), float(points[0]["lon"]))
+                if not res.get("found"):
+                    return {"data": [], "label": "Không có điểm nào trong CSDL", "tts": "", "warning": "", "message": ""}
+                pt, dist_m, gid = res["position"], res["distance_m"], res["group_id"]
+                sname = pt["street_names"][0] if pt["street_names"] else "vị trí không xác định"
+                dl = f"~{dist_m}m" if dist_m < 1000 else f"~{round(dist_m / 1000, 1)}km"
+                gtxt = f"  |  Group #{gid}" if gid is not None else ""
+                return {
+                    "data": [pt],
+                    "label": f"Điểm gần nhất: {sname} ({dl})",
+                    "tts": f"Vị trí gần nhất nằm trên {sname}, cách bạn khoảng {dist_m} mét.",
+                    "warning": "",
+                    "message": f"Khoảng cách: ~{dist_m}m{gtxt}",
+                }
+
             result = supabase.table("Positions").select("*").execute()
             all_positions = result.data or []
             if not all_positions:
@@ -986,20 +1090,7 @@ class MapsService:
                 return f"~{m}m" if m < 1000 else f"~{round(m / 1000, 1)}km"
 
             # ── Single-point mode: return nearest ────────────────────────────
-            if len(points) < 2:
-                qlat, qlon = float(points[0]["lat"]), float(points[0]["lon"])
-                nid, dist_m = find_nearest_id(qlat, qlon)
-                if nid is None:
-                    return {"data": [], "label": "Không tìm thấy", "tts": "", "warning": "", "message": ""}
-                pt    = make_result_point(pos_by_id[nid])
-                sname = pt["street_names"][0] if pt["street_names"] else "vị trí không xác định"
-                return {
-                    "data": [pt],
-                    "label": f"Điểm gần nhất: {sname} ({dist_label(round(dist_m))})",
-                    "tts": f"Vị trí gần nhất nằm trên {sname}, cách bạn khoảng {round(dist_m)} mét.",
-                    "warning": "",
-                    "message": f"Khoảng cách: ~{round(dist_m)}m",
-                }
+            # (single-point handled earlier via MapsService.nearest_position)
 
             # ── Two-point mode: shortest path via Dijkstra ───────────────────
             q1, q2 = points[0], points[1]

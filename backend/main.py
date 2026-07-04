@@ -638,6 +638,27 @@ async def search_nearest(payload: dict = Body(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/search/point")
+async def search_point(payload: dict = Body(...)):
+    """Nearest single DB position to a lat/long (2-step Group strategy).
+    Body: { lat, lon }  (also accepts long/lng for the longitude)
+    Returns: { found, position: {id,lat,lon,streets,street_names}|None, distance_m, group_id }
+    """
+    try:
+        lat = payload.get("lat")
+        lon = payload.get("lon")
+        if lon is None:
+            lon = payload.get("long", payload.get("lng"))
+        if lat is None or lon is None:
+            raise HTTPException(status_code=422, detail="lat and lon are required")
+        return await MapsService.nearest_position(float(lat), float(lon))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error searching nearest point: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== TEST / UTILITY ENDPOINTS ====================
 
 @app.get("/search/uuid")
