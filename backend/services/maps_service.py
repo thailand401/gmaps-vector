@@ -208,7 +208,7 @@ class MapsService:
     @staticmethod
     async def get_street_by_id(street_id: int) -> Optional[Street]:
         try:
-            result = supabase.table("Streets").select("id, name, type, district_id, city_id").eq("id", street_id).execute()
+            result = supabase.table("Streets").select("*").eq("id", street_id).execute()
             return Street(**result.data[0]) if result.data else None
         except Exception as e:
             raise Exception(f"Failed to fetch street: {str(e)}")
@@ -216,8 +216,16 @@ class MapsService:
     @staticmethod
     async def update_street(street_id: int, data: StreetUpdate) -> Street:
         try:
-            payload = {k: v for k, v in data.model_dump().items() if v is not None}
-            result = supabase.table("Streets").update(payload).eq("id", street_id).execute()
+            raw = {k: v for k, v in data.model_dump().items() if v is not None}
+            optional = {"toll", "flooding"}
+            core = {k: v for k, v in raw.items() if k not in optional}
+            try:
+                result = supabase.table("Streets").update(raw).eq("id", street_id).execute()
+            except Exception:
+                # toll/flooding columns may not exist yet → save core fields only
+                result = supabase.table("Streets").update(core or raw).eq("id", street_id).execute()
+            if not result.data:
+                raise Exception(f"Street #{street_id} not found or update failed")
             return Street(**result.data[0])
         except Exception as e:
             raise Exception(f"Failed to update street: {str(e)}")

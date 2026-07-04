@@ -311,6 +311,55 @@
     #cgCancel { background: #f1f3f4; color: #3c4043; }
     #cgCancel:hover { background: #e2e4e6; }
 
+    /* ── Edit Street modal ── */
+    #editStreetModal {
+      position: fixed;
+      top: 70px; left: 16px;
+      width: 320px;
+      max-height: calc(100vh - 90px);
+      overflow-y: auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.25);
+      padding: 16px;
+      z-index: 16;
+      display: none;
+      font-size: 13px;
+    }
+    #editStreetModal h3 { font-size: 14px; margin-bottom: 12px; color: #202124; }
+    #editStreetModal .close-btn {
+      position: absolute; top: 10px; right: 12px;
+      cursor: pointer; font-size: 18px; color: #888; line-height: 1;
+      background: none; border: none;
+    }
+    #editStreetModal .close-btn:hover { color: #333; }
+    #editStreetModal select, #editStreetModal input[type=text] {
+      width: 100%;
+      border: 1px solid #d0d0d0; border-radius: 8px;
+      padding: 6px 8px; font-size: 13px; background: #fafafa; outline: none;
+    }
+    #editStreetModal .row-inline select { width: auto; flex: 1; }
+    #editStreetModal .es-checks { gap: 18px; }
+    #editStreetModal .es-checks label {
+      display: flex; align-items: center; gap: 6px; color: #3c4043; font-size: 13px; margin: 0; cursor: pointer;
+    }
+    #editStreetModal .es-checks input { width: auto; }
+    #esOneway {
+      border: none; border-radius: 8px; padding: 6px 12px;
+      font-size: 13px; line-height: 1; cursor: pointer; font-weight: 600;
+      background: #fbbc04; color: #3c4043; flex: 0 0 auto; white-space: nowrap;
+    }
+    #esOneway:hover { background: #f0b400; }
+    #editStreetModal .modal-actions button {
+      border: none; border-radius: 8px; padding: 8px 14px;
+      font-size: 13px; cursor: pointer; font-weight: 600; flex: 1;
+    }
+    #esSave { background: #4285f4; color: #fff; }
+    #esSave:hover { background: #2a6dd4; }
+    #esSave:disabled { background: #b9c6e0; cursor: not-allowed; }
+    #esCancel { background: #f1f3f4; color: #3c4043; }
+    #esCancel:hover { background: #e2e4e6; }
+
     /* ── Main create FAB (nút + góc phải dưới, dùng chung) ── */
     #mainCreateBtn {
       position: fixed;
@@ -479,6 +528,63 @@
   </div>
 </div>
 
+<!-- Edit Street modal -->
+<div id="editStreetModal">
+  <button class="close-btn" id="esCloseX">&times;</button>
+  <h3 id="esTitle">Sửa đường</h3>
+
+  <div class="modal-field">
+    <label>Tên đường</label>
+    <input type="text" id="esName" placeholder="Tên đường" />
+  </div>
+
+  <div class="modal-field">
+    <label>Loại (type)</label>
+    <select id="esType">
+      <option value="Phố">Phố</option>
+      <option value="Quốc lộ">Quốc lộ</option>
+      <option value="Cao tốc">Cao tốc</option>
+      <option value="Xã">Xã</option>
+      <option value="Huyện">Huyện</option>
+      <option value="Tỉnh">Tỉnh</option>
+    </select>
+  </div>
+
+  <div class="modal-field">
+    <label>Phường/Quận (district)</label>
+    <select id="esDistrict"></select>
+  </div>
+
+  <div class="modal-field">
+    <label>Thành phố (city)</label>
+    <select id="esCity"></select>
+  </div>
+
+  <div class="modal-field row-inline es-checks">
+    <label><input type="checkbox" id="esToll" /> Thu phí</label>
+    <label><input type="checkbox" id="esFlooding" /> Ngập</label>
+  </div>
+
+  <div class="modal-field">
+    <label>Điểm bắt đầu (start)</label>
+    <select id="esStartSel"><option value="">-- Chọn điểm start --</option></select>
+  </div>
+
+  <div class="modal-field">
+    <label>Thứ tự điểm start → end <span id="esPathCount"></span></label>
+    <div class="row-inline">
+      <select id="esPathSel" multiple size="6"></select>
+      <button id="esOneway" title="Oneway: đổi các điểm đã chọn thành số âm">Oneway</button>
+    </div>
+    <small class="modal-hint">Chọn điểm rồi bấm Oneway để đánh dấu 1 chiều (id → số âm).</small>
+  </div>
+
+  <div class="modal-actions">
+    <button id="esSave">Lưu đường</button>
+    <button id="esCancel">Huỷ</button>
+  </div>
+</div>
+
 <!-- Leaflet JS -->
 <script src="js/auth.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -519,6 +625,9 @@ let allGroups      = [];   // GLOBAL store: toàn bộ group (nạp khi boot + s
 let streetGroupMap = {};   // street id → group id (loại trừ street đã thuộc group khác)
 let selectedGroupId = null; // group đang chọn trên toolbar (để sửa) — bật icon pencil ở FAB
 let cgEditId        = null; // modal đang sửa group id nào (null = tạo mới)
+let selectedStreetId = null; // đường đang chọn trên toolbar (để sửa street)
+let esEditId         = null; // street id đang sửa trong modal
+let esStreetPoints   = [];   // [{id,lat,lng}] các point của street đang sửa
 let pointPickMode   = null;  // 'start' | 'end' | null — chế độ chọn điểm đầu/đích
 let startPickMarker = null, endPickMarker = null;   // marker cờ người dùng đặt
 let startNearestId  = null, endNearestId  = null;   // id position gần nhất đang tô màu
@@ -1659,21 +1768,25 @@ function selectGroupAnchor(marker) {
 function updateMainCreateState() {
   const btn = document.getElementById('mainCreateBtn');
   if (!btn) return;
-  const editing  = selectedGroupId != null;
-  const creating = groupMode && !!groupAnchorMarker;
-  const enabled  = editing || creating;
+  const editGroup  = selectedGroupId != null;
+  const editStreet = !editGroup && selectedStreetId != null;
+  const editing    = editGroup || editStreet;
+  const creating   = groupMode && !!groupAnchorMarker;
+  const enabled    = editing || creating;
   btn.classList.toggle('active', enabled);
   btn.classList.toggle('editing', editing);
   btn.disabled = !enabled;
   btn.textContent = editing ? '✏️' : '+';
-  btn.title = editing
+  btn.title = editGroup
     ? `Sửa Group #${selectedGroupId}`
-    : (creating ? 'Tạo Group từ điểm đã chọn' : 'Chọn 1 điểm ở chế độ Create Group, hoặc chọn Group để sửa');
+    : (editStreet ? `Sửa đường #${selectedStreetId}`
+      : (creating ? 'Tạo Group từ điểm đã chọn' : 'Chọn 1 điểm ở Create Group, hoặc chọn Group/đường để sửa'));
 }
 
 // Click FAB → sửa group đang chọn trên toolbar (ưu tiên) hoặc tạo group mới
 function onMainCreate() {
   if (selectedGroupId != null) { openEditGroupModal(selectedGroupId); return; }
+  if (selectedStreetId != null) { openEditStreetModal(selectedStreetId); return; }
   if (groupMode && groupAnchorMarker) { openCreateGroupModal(); return; }
 }
 
@@ -1847,6 +1960,177 @@ async function saveCreateGroup() {
 }
 
 // ══════════════════════════════════════════════════
+//  EDIT STREET (sửa đường + sắp xếp thứ tự point + oneway)
+// ══════════════════════════════════════════════════
+// Chọn đường trên toolbar → target sửa street (bỏ chọn group nếu đang chọn)
+function onSelectStreetFromToolbar() {
+  const v = document.getElementById('selStreet').value;
+  selectedStreetId = v ? parseInt(v) : null;
+  if (selectedStreetId != null) {
+    const sg = document.getElementById('selGroup');
+    if (sg && sg.value) { sg.value = ''; selectedGroupId = null; }
+  }
+  updatePaths();
+  updateMainCreateState();
+}
+
+// Sắp xếp point theo nearest-neighbor bắt đầu từ startId (trả list {id,lat,lng})
+function orderPointsFromStart(points, startId) {
+  const rem = points.slice();
+  const si = rem.findIndex(p => p.id === startId);
+  if (si < 0) return rem;
+  const result = [rem.splice(si, 1)[0]];
+  let cur = result[0];
+  while (rem.length) {
+    let minD = Infinity, minI = 0;
+    for (let i = 0; i < rem.length; i++) {
+      const d = _geoDist2({ lat: cur.lat, lng: cur.lng }, { lat: rem[i].lat, lng: rem[i].lng });
+      if (d < minD) { minD = d; minI = i; }
+    }
+    cur = rem.splice(minI, 1)[0];
+    result.push(cur);
+  }
+  return result;
+}
+
+// Đổ dropdown 2 (thứ tự point) theo start đã chọn ở dropdown 1
+function esRenderPath() {
+  const startId = parseInt(document.getElementById('esStartSel').value);
+  const pathSel = document.getElementById('esPathSel');
+  pathSel.innerHTML = '';
+  if (!startId) { document.getElementById('esPathCount').textContent = ''; return; }
+  const ordered = orderPointsFromStart(esStreetPoints, startId);
+  ordered.forEach((p, i) => {
+    const o = document.createElement('option');
+    o.value = String(p.id);
+    o.textContent = `${i + 1}. #${p.id}`;
+    pathSel.appendChild(o);
+  });
+  document.getElementById('esPathCount').textContent = `(${ordered.length})`;
+}
+
+// Nút Oneway: đảo dấu (âm/dương) các option đang chọn ở dropdown 2
+function esOneway() {
+  const pathSel = document.getElementById('esPathSel');
+  const chosen = [...pathSel.selectedOptions];
+  if (!chosen.length) { showToast('Chọn điểm ở danh sách thứ tự trước'); return; }
+  chosen.forEach(o => {
+    const nv = -parseInt(o.value);
+    const order = o.textContent.split('.')[0];
+    o.value = String(nv);
+    o.textContent = `${order}. #${nv}`;
+  });
+}
+
+// Đổ city/district vào 2 dropdown của modal (city clone từ toolbar, district = tất cả)
+function esFillCityDistrict(cityId, districtId) {
+  const selCity = document.getElementById('esCity');
+  const selDist = document.getElementById('esDistrict');
+  selCity.innerHTML = '';
+  [...document.getElementById('selCity').options].forEach(o => {
+    if (!o.value) return;
+    const c = document.createElement('option');
+    c.value = o.value; c.textContent = o.textContent;
+    selCity.appendChild(c);
+  });
+  selDist.innerHTML = '';
+  Object.values(districtMap)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+    .forEach(d => {
+      const o = document.createElement('option');
+      o.value = d.id; o.textContent = d.name;
+      selDist.appendChild(o);
+    });
+  if (cityId != null) selCity.value = String(cityId);
+  if (districtId != null) selDist.value = String(districtId);
+}
+
+// Mở modal sửa đường (từ street đang chọn trên toolbar)
+async function openEditStreetModal(streetId) {
+  const base = streetMap[streetId];
+  if (!base) { alert('Không tìm thấy đường #' + streetId); return; }
+  closeAddModal(); closeSetNode(); closeCreateGroupModal();
+  esEditId = streetId;
+
+  let full = base;
+  try { full = await apiFetch('/streets/' + streetId); } catch (e) { console.error('get street', e); }
+
+  document.getElementById('esTitle').textContent = `Sửa đường #${streetId}`;
+  document.getElementById('esName').value = full.name || base.name || '';
+  document.getElementById('esType').value = full.type || base.type || 'Phố';
+  esFillCityDistrict(full.city_id ?? base.city_id, full.district_id ?? base.district_id);
+  document.getElementById('esToll').checked = !!full.toll;
+  document.getElementById('esFlooding').checked = !!full.flooding;
+
+  // các point của street (từ DB)
+  let pts = [];
+  try { pts = await apiFetch('/positions?street_id=' + streetId); } catch (e) { console.error('get points', e); }
+  esStreetPoints = (pts || [])
+    .filter(p => p.x != null && p.y != null)
+    .map(p => ({ id: p.id, lat: Number(p.y), lng: Number(p.x) }));
+
+  // dropdown 1 (start): tất cả point; mặc định = |positions[0]| nếu có, else point đầu
+  const startSel = document.getElementById('esStartSel');
+  startSel.innerHTML = '<option value="">-- Chọn điểm start --</option>';
+  esStreetPoints.forEach(p => {
+    const o = document.createElement('option');
+    o.value = String(p.id);
+    o.textContent = `#${p.id} (${p.lat.toFixed(4)}, ${p.lng.toFixed(4)})`;
+    startSel.appendChild(o);
+  });
+  let defStart = null;
+  const stored = Array.isArray(full.positions) ? full.positions : [];
+  if (stored.length) defStart = Math.abs(parseInt(stored[0]));
+  if (defStart == null && esStreetPoints.length) defStart = esStreetPoints[0].id;
+  if (defStart != null && esStreetPoints.some(p => p.id === defStart)) startSel.value = String(defStart);
+
+  esRenderPath();
+  document.getElementById('editStreetModal').style.display = 'block';
+}
+
+function closeEditStreetModal() {
+  const el = document.getElementById('editStreetModal');
+  if (el) el.style.display = 'none';
+  esEditId = null;
+}
+
+// Lưu đường: PUT /streets/{id} với positions (đã sort, có thể âm) + name/type/district/city/toll/flooding
+async function saveEditStreet() {
+  if (esEditId == null) return;
+  const name = document.getElementById('esName').value.trim();
+  if (!name) { alert('Tên đường không được trống.'); return; }
+  const type = document.getElementById('esType').value;
+  const districtId = parseInt(document.getElementById('esDistrict').value) || null;
+  const cityId = parseInt(document.getElementById('esCity').value) || null;
+  const toll = document.getElementById('esToll').checked;
+  const flooding = document.getElementById('esFlooding').checked;
+  const positions = [...document.getElementById('esPathSel').options]
+    .map(o => parseInt(o.value)).filter(v => !Number.isNaN(v));
+
+  const btn = document.getElementById('esSave');
+  btn.disabled = true;
+  try {
+    await apiSend('/streets/' + esEditId, 'PUT', {
+      name, type, district_id: districtId, city_id: cityId, toll, flooding, positions,
+    });
+    if (streetMap[esEditId]) {
+      streetMap[esEditId].name = name;
+      streetMap[esEditId].type = type;
+      if (districtId != null) streetMap[esEditId].district_id = districtId;
+      if (cityId != null) streetMap[esEditId].city_id = cityId;
+    }
+    const opt = [...document.getElementById('selStreet').options].find(o => String(o.value) === String(esEditId));
+    if (opt) opt.textContent = name;
+    showToast(`Đã lưu đường #${esEditId}: ${positions.length} điểm`);
+    closeEditStreetModal();
+  } catch (e) {
+    console.error('saveEditStreet', e);
+    alert('Lưu đường thất bại.');
+    btn.disabled = false;
+  }
+}
+
+// ══════════════════════════════════════════════════
 //  DROPDOWN LOADERS
 // ══════════════════════════════════════════════════
 async function loadCities() {
@@ -1916,7 +2200,9 @@ async function syncToolbarToPos(pos) {
     await loadStreets(districtId, cityId);
   }
   if (sid != null) selStreet.value = String(sid);
+  selectedStreetId = sid != null ? sid : null;
   updatePaths();
+  updateMainCreateState();
 }
 
 // ══════════════════════════════════════════════════
@@ -1958,7 +2244,7 @@ function setupUIListeners() {
     updatePaths();
   });
 
-  document.getElementById('selStreet').addEventListener('change', () => updatePaths());
+  document.getElementById('selStreet').addEventListener('change', onSelectStreetFromToolbar);
 
   document.getElementById('btnLoad').addEventListener('click', () => {
     const streetId = document.getElementById('selStreet').value;
@@ -1976,6 +2262,11 @@ function setupUIListeners() {
   document.getElementById('cgSave').addEventListener('click', saveCreateGroup);
   document.getElementById('cgCancel').addEventListener('click', closeCreateGroupModal);
   document.getElementById('cgCloseX').addEventListener('click', closeCreateGroupModal);
+  document.getElementById('esSave').addEventListener('click', saveEditStreet);
+  document.getElementById('esCancel').addEventListener('click', closeEditStreetModal);
+  document.getElementById('esCloseX').addEventListener('click', closeEditStreetModal);
+  document.getElementById('esStartSel').addEventListener('change', esRenderPath);
+  document.getElementById('esOneway').addEventListener('click', esOneway);
   document.getElementById('btnCreateDistrict').addEventListener('click', onCreateDistrict);
   document.getElementById('btnCreateStreet').addEventListener('click', onCreateStreet);
   document.getElementById('btnAddNearby').addEventListener('click', addNearbyStreet);
@@ -1999,6 +2290,7 @@ function setupUIListeners() {
     document.getElementById('selStreet').innerHTML   = '<option value="">-- Đường --</option>';
     document.getElementById('selGroup').value = '';
     selectedGroupId = null;
+    selectedStreetId = null;
     updateMainCreateState();
     document.getElementById('searchInput').value = '';
     map.setView([DEFAULT_LAT, DEFAULT_LNG], DEFAULT_ZOOM);

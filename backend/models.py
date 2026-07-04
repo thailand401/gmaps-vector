@@ -93,6 +93,8 @@ class Street(BaseModel):
     district_id: Optional[int] = None
     city_id: Optional[int] = None
     positions: Optional[list] = None
+    toll: Optional[bool] = None
+    flooding: Optional[bool] = None
     created_at: Optional[str] = None
 
     class Config:
@@ -121,6 +123,9 @@ class StreetUpdate(BaseModel):
     type: Optional[str] = None
     district_id: Optional[int] = None
     city_id: Optional[int] = None
+    positions: Optional[list] = None
+    toll: Optional[bool] = None
+    flooding: Optional[bool] = None
 
 
 # ==================== POSITIONS MODEL ====================
