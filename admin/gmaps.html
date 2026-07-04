@@ -265,6 +265,7 @@
   <button id="btnLoad">Lọc điểm</button>
   <button id="btnMove" class="secondary">Move điểm</button>
   <button id="btnAdd" class="secondary">Add điểm</button>
+  <button id="btnGroup" class="secondary">Create Group</button>
   <button id="btnClear" class="secondary">Reset</button>
 </div>
 
@@ -366,6 +367,7 @@ const DEFAULT_LAT  = 10.8231;
 const DEFAULT_LNG  = 106.6297;
 const DEFAULT_ZOOM = 12;
 const NEARBY_RADIUS_KM = 1; // bán kính gộp đường lân cận vào 1 node (Add điểm)
+const GROUP_RADIUS_KM = 2; // bán kính (km) gom đường quanh điểm cho "Create Group"
 const LAST_MARKER_KEY = 'gmaps_last_marker'; // localStorage: toạ độ marker chọn gần nhất
 
 // ══════════════════════════════════════════════════
@@ -383,6 +385,10 @@ let activeInfoPos = null;  // pos đang hiển thị ở info panel
 let addMode       = false; // bật/tắt chế độ thêm điểm (click map)
 let pendingMarker = null;  // marker tạm cho điểm đang thêm
 let pendingGeo    = null;  // { lat, lng, osmStreet, osmWard }
+let groupMode          = false; // bật/tắt chế độ "Create Group"
+let groupHiliteMarkers = [];    // các marker đang tô đỏ theo nhóm
+let groupRadiusCircle  = null;  // vòng tròn minh hoạ bán kính nhóm
+let groupAnchorMarker  = null;  // điểm được chọn làm tâm nhóm
 
 // ══════════════════════════════════════════════════
 //  HELPERS
@@ -503,6 +509,7 @@ function circleIcon(color) {
 function clearMarkers() {
   if (layerGroup) layerGroup.clearLayers();
   clearPaths();
+  clearGroupHighlight();
   setCounter(0);
   hideInfo();
 }
@@ -520,7 +527,10 @@ function createMarker(pos) {
   const m = L.marker([lat, lng], { icon: circleIcon('#4285f4'), title: streetNames, draggable: moveMode });
   m._pos = pos;
   m._streetNames = streetNames;
-  m.on('click', () => showInfo(pos, streetNames, m));
+  m.on('click', () => {
+    if (groupMode) { selectGroupAnchor(m); return; }
+    showInfo(pos, streetNames, m);
+  });
   m.on('dragend', () => onMarkerDragEnd(m));
   return m;
 }
@@ -558,7 +568,7 @@ async function onMarkerDragEnd(marker) {
 // ── Bật/tắt chế độ di chuyển điểm ──
 function setMoveMode(on) {
   moveMode = on;
-  if (on) { setAddMode(false); closeAddModal(); closeSetNode(); } // không bật đồng thời với "Add điểm"
+  if (on) { setAddMode(false); setGroupMode(false); closeAddModal(); closeSetNode(); } // không bật đồng thời với "Add điểm"/"Create Group"
   const btn = document.getElementById('btnMove');
   btn.classList.toggle('active', on);
   btn.classList.toggle('secondary', !on);
@@ -884,7 +894,7 @@ async function fillRoadInfo(pos) {
 // ══════════════════════════════════════════════════
 function setAddMode(on) {
   addMode = on;
-  if (on && moveMode) setMoveMode(false);
+  if (on) { if (moveMode) setMoveMode(false); setGroupMode(false); }
   const btn = document.getElementById('btnAdd');
   btn.classList.toggle('active', on);
   btn.classList.toggle('secondary', !on);
@@ -1256,6 +1266,65 @@ async function saveSetNode() {
 }
 
 // ══════════════════════════════════════════════════
+//  CREATE GROUP (chọn 1 điểm → tô đỏ điểm của các đường trong bán kính 2km)
+// ══════════════════════════════════════════════════
+// Bật/tắt chế độ tạo nhóm (loại trừ với Move/Add điểm)
+function setGroupMode(on) {
+  groupMode = on;
+  if (on) { setMoveMode(false); setAddMode(false); closeAddModal(); closeSetNode(); hideInfo(); }
+  else { clearGroupHighlight(); }
+  const btn = document.getElementById('btnGroup');
+  if (btn) {
+    btn.classList.toggle('active', on);
+    btn.classList.toggle('secondary', !on);
+  }
+  document.getElementById('map').style.cursor = on ? 'pointer' : '';
+  if (on) showToast(`Chế độ tạo nhóm: BẬT — chọn 1 điểm để gom đường ≤${GROUP_RADIUS_KM}km`);
+}
+
+// Trả các marker đã tô đỏ về màu mặc định + xoá vòng tròn bán kính
+function clearGroupHighlight() {
+  groupHiliteMarkers.forEach(m => { if (m) m.setIcon(circleIcon('#4285f4')); });
+  groupHiliteMarkers = [];
+  if (groupRadiusCircle && map) map.removeLayer(groupRadiusCircle);
+  groupRadiusCircle = null;
+  groupAnchorMarker = null;
+}
+
+// Chọn 1 điểm làm tâm → tô đỏ mọi điểm thuộc các đường có ≥1 điểm trong bán kính 2km
+function selectGroupAnchor(marker) {
+  clearGroupHighlight();
+  const pos = marker && marker._pos;
+  if (!pos || pos.y == null || pos.x == null) return;
+  groupAnchorMarker = marker;
+
+  // Vòng tròn minh hoạ bán kính quanh điểm được chọn
+  groupRadiusCircle = L.circle([pos.y, pos.x], {
+    radius: GROUP_RADIUS_KM * 1000,
+    color: '#ea4335', weight: 1.5, opacity: 0.7,
+    fillColor: '#ea4335', fillOpacity: 0.06,
+  }).addTo(map);
+
+  // Mọi đường có ≥1 điểm (đã load) trong bán kính 2km quanh điểm được chọn
+  const streets = getNearbyStreets(pos.y, pos.x, GROUP_RADIUS_KM);
+  const sidSet = new Set(streets.map(s => s.id));
+
+  // Tô đỏ mọi điểm thuộc các đường tìm thấy
+  let count = 0;
+  if (layerGroup) layerGroup.eachLayer(m => {
+    const p = m._pos;
+    if (!p || !Array.isArray(p.streets)) return;
+    if (p.streets.some(sid => sidSet.has(sid))) {
+      m.setIcon(circleIcon('#ea4335'));
+      groupHiliteMarkers.push(m);
+      count++;
+    }
+  });
+
+  showToast(`Nhóm quanh #${pos.id}: ${streets.length} đường · ${count} điểm ≤${GROUP_RADIUS_KM}km`);
+}
+
+// ══════════════════════════════════════════════════
 //  DROPDOWN LOADERS
 // ══════════════════════════════════════════════════
 async function loadCities() {
@@ -1378,6 +1447,7 @@ function setupUIListeners() {
   document.getElementById('btnMove').addEventListener('click', () => setMoveMode(!moveMode));
 
   document.getElementById('btnAdd').addEventListener('click', () => setAddMode(!addMode));
+  document.getElementById('btnGroup').addEventListener('click', () => setGroupMode(!groupMode));
   document.getElementById('btnCreateDistrict').addEventListener('click', onCreateDistrict);
   document.getElementById('btnCreateStreet').addEventListener('click', onCreateStreet);
   document.getElementById('btnAddNearby').addEventListener('click', addNearbyStreet);
@@ -1393,6 +1463,7 @@ function setupUIListeners() {
   document.getElementById('setNodeCloseX').addEventListener('click', closeSetNode);
 
   document.getElementById('btnClear').addEventListener('click', () => {
+    setGroupMode(false);
     clearMarkers();
     document.getElementById('selCity').value = '';
     document.getElementById('selDistrict').innerHTML = '<option value="">-- Quận/Huyện --</option>';
@@ -1411,6 +1482,7 @@ function setupUIListeners() {
     const k = (e.key || '').toLowerCase();
     if (k === 'n') { e.preventDefault(); setAddMode(!addMode); }
     else if (k === 'm') { e.preventDefault(); setMoveMode(!moveMode); }
+    else if (k === 'g') { e.preventDefault(); setGroupMode(!groupMode); }
   });
 }
 
