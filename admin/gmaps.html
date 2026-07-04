@@ -246,6 +246,28 @@
       font-size: 11px; color: #555; font-variant-numeric: tabular-nums;
     }
 
+    /* ── Search-point buttons (điểm đầu/đích) — dưới slider, dọc bên phải ── */
+    .searchpt-control {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.4);
+      padding: 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .searchpt-btn {
+      width: 34px; height: 34px;
+      border: none; border-radius: 6px;
+      background: #f1f3f4; cursor: pointer;
+      font-size: 17px; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .searchpt-btn:hover { background: #e2e4e6; }
+    #btnSetStart.active { background: #0b8043; }
+    #btnSetEnd.active   { background: #d93025; }
+
     /* ── Create Group modal ── */
     #createGroupModal {
       position: fixed;
@@ -497,6 +519,12 @@ let allGroups      = [];   // GLOBAL store: toàn bộ group (nạp khi boot + s
 let streetGroupMap = {};   // street id → group id (loại trừ street đã thuộc group khác)
 let selectedGroupId = null; // group đang chọn trên toolbar (để sửa) — bật icon pencil ở FAB
 let cgEditId        = null; // modal đang sửa group id nào (null = tạo mới)
+let pointPickMode   = null;  // 'start' | 'end' | null — chế độ chọn điểm đầu/đích
+let startPickMarker = null, endPickMarker = null;   // marker cờ người dùng đặt
+let startNearestId  = null, endNearestId  = null;   // id position gần nhất đang tô màu
+let startTempMarker = null, endTempMarker = null;   // marker tạm khi nearest không hiển thị
+const PT_START_COLOR = '#0b8043';  // xanh lá — nearest của điểm đầu
+const PT_END_COLOR   = '#d93025';  // đỏ — nearest của điểm đích
 
 // ══════════════════════════════════════════════════
 //  HELPERS
@@ -565,9 +593,18 @@ function initMap() {
   layerGroup = L.layerGroup().addTo(map);
   pathLayer  = L.layerGroup().addTo(map);
   addOpacityControl();
+  addSearchPointControl();
 
-  // Click map khi đang ở chế độ "Add điểm" → bắt đầu thêm điểm
+  // Click map: ưu tiên chế độ chọn điểm đầu/đích, rồi tới "Add điểm"
   map.on('click', e => {
+    if (pointPickMode) {
+      const role = pointPickMode;
+      const lat = Math.round(e.latlng.lat * 1e6) / 1e6;
+      const lng = Math.round(e.latlng.lng * 1e6) / 1e6;
+      setPointPickMode(role); // toggle tắt (đang active role)
+      pickSearchPoint(role, lat, lng);
+      return;
+    }
     if (!addMode) return;
     startAddPoint(e.latlng.lat, e.latlng.lng);
   });
@@ -593,6 +630,112 @@ function addOpacityControl() {
     return div;
   };
   ctrl.addTo(map);
+}
+
+// Hai nút chọn điểm đầu/đích (đặt dưới slider opacity, dọc bên phải)
+function addSearchPointControl() {
+  const ctrl = L.control({ position: 'topright' });
+  ctrl.onAdd = function () {
+    const div = L.DomUtil.create('div', 'leaflet-control searchpt-control');
+    div.innerHTML =
+      '<button id="btnSetStart" class="searchpt-btn" title="Đặt điểm đầu — click lên bản đồ">🚩</button>' +
+      '<button id="btnSetEnd" class="searchpt-btn" title="Đặt điểm đích — click lên bản đồ">🏁</button>';
+    L.DomEvent.disableClickPropagation(div);
+    div.querySelector('#btnSetStart').addEventListener('click', () => setPointPickMode('start'));
+    div.querySelector('#btnSetEnd').addEventListener('click', () => setPointPickMode('end'));
+    return div;
+  };
+  ctrl.addTo(map);
+}
+
+// Icon cờ cho điểm người dùng đặt
+function flagIcon(emoji) {
+  return L.divIcon({
+    html: `<span style="font-size:22px;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))">${emoji}</span>`,
+    className: '', iconSize: [24, 24], iconAnchor: [6, 22],
+  });
+}
+
+// Bật/tắt chế độ chọn điểm (toggle). role: 'start' | 'end' | null
+function setPointPickMode(role) {
+  pointPickMode = (pointPickMode === role) ? null : role;
+  if (pointPickMode) { setMoveMode(false); setAddMode(false); setGroupMode(false); }
+  const bs = document.getElementById('btnSetStart');
+  const be = document.getElementById('btnSetEnd');
+  if (bs) bs.classList.toggle('active', pointPickMode === 'start');
+  if (be) be.classList.toggle('active', pointPickMode === 'end');
+  document.getElementById('map').style.cursor = pointPickMode ? 'crosshair' : '';
+  if (pointPickMode === 'start') showToast('Chọn điểm ĐẦU trên bản đồ');
+  else if (pointPickMode === 'end') showToast('Chọn điểm ĐÍCH trên bản đồ');
+}
+
+function findMarkerByPosId(id) {
+  let found = null;
+  if (layerGroup) layerGroup.eachLayer(l => { if (l._pos && l._pos.id === id) found = l; });
+  return found;
+}
+
+// Trả marker gần nhất (của role) về màu nền + xoá marker tạm
+function revertNearest(role) {
+  const id = role === 'start' ? startNearestId : endNearestId;
+  if (id != null) {
+    const m = findMarkerByPosId(id);
+    if (m) m.setIcon(circleIcon(posBaseColor(m._pos)));
+  }
+  if (role === 'start') {
+    startNearestId = null;
+    if (startTempMarker) { map.removeLayer(startTempMarker); startTempMarker = null; }
+  } else {
+    endNearestId = null;
+    if (endTempMarker) { map.removeLayer(endTempMarker); endTempMarker = null; }
+  }
+}
+
+// Đặt điểm đầu/đích → gọi /search/point → tô màu marker gần nhất
+async function pickSearchPoint(role, lat, lng) {
+  const color = role === 'start' ? PT_START_COLOR : PT_END_COLOR;
+  const emoji = role === 'start' ? '🚩' : '🏁';
+
+  // marker người dùng đặt (thay marker cũ cùng role)
+  if (role === 'start') {
+    if (startPickMarker) map.removeLayer(startPickMarker);
+    startPickMarker = L.marker([lat, lng], { icon: flagIcon(emoji), title: 'Điểm đầu', zIndexOffset: 1000 }).addTo(map);
+  } else {
+    if (endPickMarker) map.removeLayer(endPickMarker);
+    endPickMarker = L.marker([lat, lng], { icon: flagIcon(emoji), title: 'Điểm đích', zIndexOffset: 1000 }).addTo(map);
+  }
+
+  revertNearest(role); // bỏ tô màu nearest cũ của role này
+
+  try {
+    const res = await apiSend('/search/point', 'POST', { lat, lon: lng });
+    if (!res || !res.found || !res.position) { showToast('Không tìm thấy điểm gần nhất'); return; }
+    const p = res.position;
+    const m = findMarkerByPosId(p.id);
+    if (m) {
+      m.setIcon(circleIcon(color));
+      if (role === 'start') startNearestId = p.id; else endNearestId = p.id;
+    } else {
+      // nearest không nằm trong tập marker đang hiển thị → marker tạm
+      const tmp = L.circleMarker([p.lat, p.lon], { radius: 8, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 }).addTo(map);
+      if (role === 'start') startTempMarker = tmp; else endTempMarker = tmp;
+    }
+    const dtxt = res.distance_m != null ? `${res.distance_m}m` : '?';
+    const sname = (p.street_names && p.street_names[0]) || ('#' + p.id);
+    showToast(`${role === 'start' ? 'Điểm đầu' : 'Điểm đích'} → gần nhất #${p.id} (${sname}) · ${dtxt}`);
+  } catch (e) {
+    console.error('pickSearchPoint', e);
+    alert('Tìm điểm gần nhất thất bại.');
+  }
+}
+
+// Xoá toàn bộ điểm đầu/đích + tô màu (dùng khi Reset)
+function clearSearchPoints() {
+  setPointPickMode(null);
+  revertNearest('start');
+  revertNearest('end');
+  if (startPickMarker) { map.removeLayer(startPickMarker); startPickMarker = null; }
+  if (endPickMarker) { map.removeLayer(endPickMarker); endPickMarker = null; }
 }
 
 // ══════════════════════════════════════════════════
@@ -676,7 +819,7 @@ async function onMarkerDragEnd(marker) {
 // ── Bật/tắt chế độ di chuyển điểm ──
 function setMoveMode(on) {
   moveMode = on;
-  if (on) { setAddMode(false); setGroupMode(false); closeAddModal(); closeSetNode(); } // không bật đồng thời với "Add điểm"/"Create Group"
+  if (on) { setAddMode(false); setGroupMode(false); setPointPickMode(null); closeAddModal(); closeSetNode(); } // không bật đồng thời với "Add điểm"/"Create Group"
   const btn = document.getElementById('btnMove');
   btn.classList.toggle('active', on);
   btn.classList.toggle('secondary', !on);
@@ -1002,7 +1145,7 @@ async function fillRoadInfo(pos) {
 // ══════════════════════════════════════════════════
 function setAddMode(on) {
   addMode = on;
-  if (on) { if (moveMode) setMoveMode(false); setGroupMode(false); }
+  if (on) { if (moveMode) setMoveMode(false); setGroupMode(false); setPointPickMode(null); }
   const btn = document.getElementById('btnAdd');
   btn.classList.toggle('active', on);
   btn.classList.toggle('secondary', !on);
@@ -1452,7 +1595,7 @@ function refreshMarkerColors() {
 // Bật/tắt chế độ tạo nhóm (loại trừ với Move/Add điểm)
 function setGroupMode(on) {
   groupMode = on;
-  if (on) { setMoveMode(false); setAddMode(false); closeAddModal(); closeSetNode(); hideInfo(); }
+  if (on) { setMoveMode(false); setAddMode(false); setPointPickMode(null); closeAddModal(); closeSetNode(); hideInfo(); }
   else { clearGroupHighlight(); closeCreateGroupModal(); }
   const btn = document.getElementById('btnGroup');
   if (btn) {
@@ -1849,6 +1992,7 @@ function setupUIListeners() {
 
   document.getElementById('btnClear').addEventListener('click', () => {
     setGroupMode(false);
+    clearSearchPoints();
     clearMarkers();
     document.getElementById('selCity').value = '';
     document.getElementById('selDistrict').innerHTML = '<option value="">-- Quận/Huyện --</option>';
