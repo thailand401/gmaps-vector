@@ -469,6 +469,7 @@ const DEFAULT_ZOOM = 12;
 const NEARBY_RADIUS_KM = 1; // bán kính gộp đường lân cận vào 1 node (Add điểm)
 const GROUP_RADIUS_KM = 1; // bán kính (km) gom đường quanh điểm cho "Create Group"
 const GROUP_OUTER_MULT = 2;  // vùng gấp đôi bán kính để bổ sung đường thủ công vào main list
+const DEFAULT_MARKER_COLOR = '#4285f4'; // màu marker mặc định (street chưa thuộc group nào)
 const LAST_MARKER_KEY = 'gmaps_last_marker'; // localStorage: toạ độ marker chọn gần nhất
 
 // ══════════════════════════════════════════════════
@@ -490,6 +491,8 @@ let groupMode          = false; // bật/tắt chế độ "Create Group"
 let groupHiliteMarkers = [];    // các marker đang tô đỏ theo nhóm
 let groupRadiusCircle  = null;  // vòng tròn minh hoạ bán kính nhóm
 let groupAnchorMarker  = null;  // điểm được chọn làm tâm nhóm
+let allGroups      = [];   // GLOBAL store: toàn bộ group (nạp khi boot + sau khi tạo group)
+let streetGroupMap = {};   // street id → group id (loại trừ street đã thuộc group khác)
 
 // ══════════════════════════════════════════════════
 //  HELPERS
@@ -625,7 +628,7 @@ function createMarker(pos) {
     .filter(Boolean)
     .join(', ') || '—';
 
-  const m = L.marker([lat, lng], { icon: circleIcon('#4285f4'), title: streetNames, draggable: moveMode });
+  const m = L.marker([lat, lng], { icon: circleIcon(posBaseColor(pos)), title: streetNames, draggable: moveMode });
   m._pos = pos;
   m._streetNames = streetNames;
   m.on('click', () => {
@@ -1367,7 +1370,72 @@ async function saveSetNode() {
 }
 
 // ══════════════════════════════════════════════════
-//  CREATE GROUP (chọn 1 điểm → tô đỏ điểm của các đường trong bán kính 2km)
+//  GROUPS STORE + MÀU MARKER THEO GROUP (global)
+// ══════════════════════════════════════════════════
+// Nạp toàn bộ group từ DB vào store toàn cục (gọi khi boot + sau khi tạo group)
+async function loadAllGroups() {
+  try {
+    const groups = await apiFetch('/groups');
+    allGroups = Array.isArray(groups) ? groups : [];
+  } catch (e) {
+    console.error('loadAllGroups', e);
+    allGroups = [];
+  }
+  rebuildStreetGroupMap();
+}
+
+// Dựng lại map street id → group id (1 street chỉ thuộc group đầu tiên claim nó)
+function rebuildStreetGroupMap() {
+  streetGroupMap = {};
+  (allGroups || []).forEach(g => {
+    (g.streets || []).forEach(sid => {
+      if (streetGroupMap[sid] == null) streetGroupMap[sid] = g.id;
+    });
+  });
+}
+
+// Thêm/cập nhật 1 group vào store sau khi tạo thành công trên DB
+function addGroupToStore(g) {
+  if (!g || g.id == null) return;
+  const idx = allGroups.findIndex(x => x.id === g.id);
+  if (idx >= 0) allGroups[idx] = g; else allGroups.push(g);
+  rebuildStreetGroupMap();
+}
+
+// Street đã thuộc 1 group nào đó → loại trừ khi tạo group mới
+function isStreetGrouped(sid) {
+  return streetGroupMap[sid] != null;
+}
+
+// Màu riêng ổn định cho mỗi group theo id (góc vàng cho phân bố hue đều)
+function groupColor(gid) {
+  const hue = (Number(gid) * 137.508) % 360;
+  return `hsl(${Math.round(hue)}, 65%, 45%)`;
+}
+
+// Group id mà 1 điểm thuộc về (theo street đầu tiên có group), hoặc null
+function groupOfPos(pos) {
+  if (!pos || !Array.isArray(pos.streets)) return null;
+  for (const sid of pos.streets) {
+    if (streetGroupMap[sid] != null) return streetGroupMap[sid];
+  }
+  return null;
+}
+
+// Màu nền của marker: theo group nếu thuộc group, ngược lại xanh mặc định
+function posBaseColor(pos) {
+  const gid = groupOfPos(pos);
+  return gid != null ? groupColor(gid) : DEFAULT_MARKER_COLOR;
+}
+
+// Tô lại màu toàn bộ marker theo group membership hiện tại
+function refreshMarkerColors() {
+  if (!layerGroup) return;
+  layerGroup.eachLayer(m => { if (m._pos) m.setIcon(circleIcon(posBaseColor(m._pos))); });
+}
+
+// ══════════════════════════════════════════════════
+//  CREATE GROUP (chọn 1 điểm → tô đỏ điểm của các đường chưa thuộc group trong bán kính)
 // ══════════════════════════════════════════════════
 // Bật/tắt chế độ tạo nhóm (loại trừ với Move/Add điểm)
 function setGroupMode(on) {
@@ -1384,9 +1452,9 @@ function setGroupMode(on) {
   if (on) showToast(`Chế độ tạo nhóm: BẬT — chọn 1 điểm để gom đường ≤${GROUP_RADIUS_KM}km`);
 }
 
-// Trả các marker đã tô đỏ về màu mặc định + xoá vòng tròn bán kính
+// Trả các marker đã tô đỏ về màu nền (theo group) + xoá vòng tròn bán kính
 function clearGroupHighlight() {
-  groupHiliteMarkers.forEach(m => { if (m) m.setIcon(circleIcon('#4285f4')); });
+  groupHiliteMarkers.forEach(m => { if (m) m.setIcon(circleIcon(posBaseColor(m._pos))); });
   groupHiliteMarkers = [];
   if (groupRadiusCircle && map) map.removeLayer(groupRadiusCircle);
   groupRadiusCircle = null;
@@ -1409,8 +1477,8 @@ function selectGroupAnchor(marker) {
     fillColor: '#ea4335', fillOpacity: 0.06,
   }).addTo(map);
 
-  // Mọi đường có ≥1 điểm (đã load) trong bán kính 2km quanh điểm được chọn
-  const streets = getNearbyStreets(pos.y, pos.x, GROUP_RADIUS_KM);
+  // Mọi đường (chưa thuộc group khác) có ≥1 điểm trong bán kính quanh điểm được chọn
+  const streets = getNearbyStreets(pos.y, pos.x, GROUP_RADIUS_KM).filter(s => !isStreetGrouped(s.id));
   const sidSet = new Set(streets.map(s => s.id));
 
   // Tô đỏ mọi điểm thuộc các đường tìm thấy
@@ -1456,15 +1524,16 @@ function openCreateGroupModal() {
   document.getElementById('cgCenter').textContent = `${Number(pos.y).toFixed(6)} / ${Number(pos.x).toFixed(6)}`;
   document.getElementById('cgOuterKm').textContent = (GROUP_RADIUS_KM * GROUP_OUTER_MULT);
 
-  // Main list = đường auto-pick trong bán kính
-  const mainStreets = getNearbyStreets(pos.y, pos.x, GROUP_RADIUS_KM);
+  // Main list = đường auto-pick trong bán kính (loại đường đã thuộc group khác)
+  const mainStreets = getNearbyStreets(pos.y, pos.x, GROUP_RADIUS_KM).filter(s => !isStreetGrouped(s.id));
   const mainSet = new Set(mainStreets.map(s => s.id));
   const listEl = document.getElementById('cgMainList');
   listEl.innerHTML = '';
   mainStreets.forEach(s => appendStreetRow(listEl, s.id, cgUpdateCounts));
 
-  // Dropdown second = đường trong vùng gấp đôi bán kính, chưa có trong main
-  const outer = getNearbyStreets(pos.y, pos.x, GROUP_RADIUS_KM * GROUP_OUTER_MULT).filter(s => !mainSet.has(s.id));
+  // Dropdown second = đường trong vùng gấp đôi bán kính, chưa có trong main & chưa thuộc group khác
+  const outer = getNearbyStreets(pos.y, pos.x, GROUP_RADIUS_KM * GROUP_OUTER_MULT)
+    .filter(s => !mainSet.has(s.id) && !isStreetGrouped(s.id));
   const outerSel = document.getElementById('cgOuterSel');
   outerSel.innerHTML = '';
   outer.forEach(s => {
@@ -1503,26 +1572,20 @@ function cgAddOuterStreets() {
   cgUpdateCounts();
 }
 
-// Nạp toàn bộ group vào dropdown neighbor (multi-select)
-async function loadGroupsIntoNeighbor() {
+// Nạp neighbor dropdown từ store toàn cục allGroups (mỗi group hiển thị theo màu riêng)
+function loadGroupsIntoNeighbor() {
   const sel = document.getElementById('cgNeighborSel');
   const cnt = document.getElementById('cgNeighborCount');
   sel.innerHTML = '';
-  cnt.textContent = '…';
-  try {
-    const groups = await apiFetch('/groups');
-    (groups || []).forEach(g => {
-      const o = document.createElement('option');
-      const nStreets = Array.isArray(g.streets) ? g.streets.length : 0;
-      o.value = g.id;
-      o.textContent = `Group #${g.id} · ${nStreets} đường`;
-      sel.appendChild(o);
-    });
-    cnt.textContent = `(${(groups || []).length})`;
-  } catch (e) {
-    console.error('loadGroupsIntoNeighbor', e);
-    cnt.textContent = '(lỗi tải)';
-  }
+  (allGroups || []).forEach(g => {
+    const o = document.createElement('option');
+    const nStreets = Array.isArray(g.streets) ? g.streets.length : 0;
+    o.value = g.id;
+    o.textContent = `Group #${g.id} · ${nStreets} đường`;
+    o.style.color = groupColor(g.id);
+    sel.appendChild(o);
+  });
+  cnt.textContent = `(${(allGroups || []).length})`;
 }
 
 function closeCreateGroupModal() {
@@ -1549,6 +1612,9 @@ async function saveCreateGroup() {
       streets,
       neighbor,
     });
+    addGroupToStore(g);              // cập nhật store toàn cục (quản lý nhiều group)
+    clearGroupHighlight();           // xoá tô đỏ + vòng tròn (trả marker về màu group mới)
+    refreshMarkerColors();           // tô lại toàn bộ marker theo group membership
     showToast(`Đã tạo Group #${g.id}: ${streets.length} đường · ${neighbor.length} neighbor`);
     closeCreateGroupModal();
   } catch (e) {
@@ -1749,6 +1815,7 @@ async function loadAllRefData() {
   setupUIListeners();
   await loadCities();
   await loadAllRefData();   // nạp Streets + Districts trước khi render marker
+  await loadAllGroups();    // nạp GLOBAL group store (để tô màu marker theo group)
 
   // Load toàn bộ marker từ DB ngay khi trang mở
   await loadPositions('/positions');
