@@ -347,6 +347,7 @@ const LAST_MARKER_KEY = 'gmaps_last_marker'; // localStorage: toạ độ marker
 // ══════════════════════════════════════════════════
 let map;
 let layerGroup  = null;   // L.LayerGroup chứa toàn bộ marker
+let pathLayer   = null;   // L.LayerGroup chứa polyline path của street
 let streetMap   = {};     // id → street object
 let districtMap = {};     // id → district object
 let allStreets  = [];
@@ -421,6 +422,7 @@ function initMap() {
   }).addTo(map);
 
   layerGroup = L.layerGroup().addTo(map);
+  pathLayer  = L.layerGroup().addTo(map);
 
   // Click map khi đang ở chế độ "Add điểm" → bắt đầu thêm điểm
   map.on('click', e => {
@@ -450,6 +452,7 @@ function circleIcon(color) {
 // ══════════════════════════════════════════════════
 function clearMarkers() {
   if (layerGroup) layerGroup.clearLayers();
+  clearPaths();
   setCounter(0);
   hideInfo();
 }
@@ -520,6 +523,89 @@ function setMoveMode(on) {
 }
 
 // ══════════════════════════════════════════════════
+//  STREET PATH (vẽ path nối các điểm của street)
+// ══════════════════════════════════════════════════
+const PATH_COLORS = ['#2196F3','#E91E63','#4CAF50','#FF9800','#9C27B0','#00BCD4','#FF5722','#8BC34A','#F44336','#3F51B5'];
+
+function clearPaths() {
+  if (pathLayer) pathLayer.clearLayers();
+}
+
+// Khoảng cách bình phương (xấp xỉ) để so sánh tương đối
+function _geoDist2(a, b) {
+  const dLat = a.lat - b.lat;
+  const dLon = a.lng - b.lng;
+  const cosLat = Math.cos(a.lat * Math.PI / 180);
+  return dLat * dLat + dLon * dLon * cosLat * cosLat;
+}
+
+// Sắp xếp điểm dọc theo đường: bắt đầu từ 1 đầu (2 điểm xa nhau nhất) rồi nối nearest-neighbor
+function nearestNeighborSort(pts) {
+  if (pts.length <= 1) return [...pts];
+  let maxD = -1, startIdx = 0;
+  for (let i = 0; i < pts.length; i++)
+    for (let j = i + 1; j < pts.length; j++) {
+      const d = _geoDist2(pts[i], pts[j]);
+      if (d > maxD) { maxD = d; startIdx = i; }
+    }
+  const rem = [...pts], result = [];
+  let cur = rem.splice(startIdx, 1)[0];
+  result.push(cur);
+  while (rem.length) {
+    let minD = Infinity, minI = 0;
+    for (let i = 0; i < rem.length; i++) {
+      const d = _geoDist2(rem[i], cur);
+      if (d < minD) { minD = d; minI = i; }
+    }
+    cur = rem.splice(minI, 1)[0];
+    result.push(cur);
+  }
+  return result;
+}
+
+// Lấy các điểm (đã load) thuộc 1 street
+function collectStreetPoints(streetId) {
+  const pts = [];
+  if (layerGroup) layerGroup.eachLayer(l => {
+    const p = l._pos;
+    if (p && Array.isArray(p.streets) && p.streets.includes(streetId) && p.y != null && p.x != null) {
+      pts.push({ lat: p.y, lng: p.x });
+    }
+  });
+  return pts;
+}
+
+// Vẽ polyline cho 1 street; trả về true nếu vẽ được (≥2 điểm)
+function drawStreetPath(streetId, color) {
+  const pts = collectStreetPoints(streetId);
+  if (pts.length < 2) return false;
+  const sorted = nearestNeighborSort(pts);
+  L.polyline(sorted.map(p => [p.lat, p.lng]), {
+    color: color || '#E91E63', weight: 3, opacity: 0.85, dashArray: '6,4',
+  }).addTo(pathLayer);
+  return true;
+}
+
+// Vẽ path cho tất cả street thuộc 1 phường (mỗi đường 1 màu)
+function drawDistrictPaths(districtId) {
+  let colorIdx = 0;
+  Object.values(streetMap).forEach(s => {
+    if (s && Number(s.district_id) === districtId) {
+      if (drawStreetPath(s.id, PATH_COLORS[colorIdx % PATH_COLORS.length])) colorIdx++;
+    }
+  });
+}
+
+// Cập nhật path theo toolbar: chọn street → vẽ street đó; chỉ chọn phường → vẽ mọi street của phường
+function updatePaths() {
+  clearPaths();
+  const streetId = parseInt(document.getElementById('selStreet').value);
+  const districtId = parseInt(document.getElementById('selDistrict').value);
+  if (streetId) drawStreetPath(streetId, '#E91E63');
+  else if (districtId) drawDistrictPaths(districtId);
+}
+
+// ══════════════════════════════════════════════════
 //  LOAD ALL POSITIONS FROM DB
 // ══════════════════════════════════════════════════
 async function loadPositions(endpoint) {
@@ -562,6 +648,7 @@ async function loadPositions(endpoint) {
     alert('Không thể tải dữ liệu vị trí.\nKiểm tra server tại ' + API);
   } finally {
     setLoading(false);
+    updatePaths();
   }
 }
 
@@ -1188,6 +1275,7 @@ async function syncToolbarToPos(pos) {
     await loadStreets(districtId, cityId);
   }
   if (sid != null) selStreet.value = String(sid);
+  updatePaths();
 }
 
 // ══════════════════════════════════════════════════
@@ -1220,12 +1308,16 @@ function setupSearch() {
 function setupUIListeners() {
   document.getElementById('selCity').addEventListener('change', async e => {
     await loadDistricts(e.target.value);
+    updatePaths();
   });
 
   document.getElementById('selDistrict').addEventListener('change', async e => {
     const cityId = document.getElementById('selCity').value;
     await loadStreets(e.target.value, cityId);
+    updatePaths();
   });
+
+  document.getElementById('selStreet').addEventListener('change', () => updatePaths());
 
   document.getElementById('btnLoad').addEventListener('click', () => {
     const streetId = document.getElementById('selStreet').value;
