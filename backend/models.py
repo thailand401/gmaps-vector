@@ -165,3 +165,31 @@ class PositionUpdate(BaseModel):
     lane: Optional[int] = None
     tool: Optional[int] = None
     flooding: Optional[bool] = None
+
+
+# ==================== GROUPS MODEL ====================
+
+class Group(BaseModel):
+    id: Optional[int] = None
+    lat_center: Optional[float] = None
+    long_center: Optional[float] = None
+    streets: Optional[list] = None       # JSON array of street ids
+    neighbor: Optional[list] = None      # JSON array of group ids
+    created_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class GroupCreate(BaseModel):
+    lat_center: float
+    long_center: float
+    streets: List[int]
+    neighbor: Optional[List[int]] = None
+
+
+class GroupUpdate(BaseModel):
+    lat_center: Optional[float] = None
+    long_center: Optional[float] = None
+    streets: Optional[List[int]] = None
+    neighbor: Optional[List[int]] = None

@@ -20,6 +20,7 @@ from models import (
     District, DistrictCreate, DistrictUpdate,
     Street, StreetCreate, StreetUpdate,
     Position, PositionCreate, PositionUpdate,
+    Group, GroupCreate, GroupUpdate,
 )
 from services.category_service import CategoryService
 from services.intent_service import IntentService
@@ -542,6 +543,61 @@ async def delete_position_cascade(position_id: int):
         return {"message": "Position deleted and Streets updated"}
     except Exception as e:
         logger.error(f"Error deleting position cascade: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== GROUPS ENDPOINTS ====================
+
+@app.get("/api/groups", response_model=List[Group])
+async def list_groups():
+    """Get all groups (used by the neighbor dropdown in Create Group)."""
+    try:
+        return await MapsService.get_groups()
+    except Exception as e:
+        logger.error(f"Error fetching groups: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/groups/{group_id}", response_model=Group)
+async def get_group(group_id: int):
+    try:
+        group = await MapsService.get_group_by_id(group_id)
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+        return group
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/groups", response_model=Group)
+async def create_group(group: GroupCreate):
+    """Create a new group.
+    Body: { lat_center, long_center, streets: [street_id, ...], neighbor?: [group_id, ...] }
+    """
+    try:
+        return await MapsService.create_group(group)
+    except Exception as e:
+        logger.error(f"Error creating group: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/groups/{group_id}", response_model=Group)
+async def update_group(group_id: int, group: GroupUpdate):
+    try:
+        return await MapsService.update_group(group_id, group)
+    except Exception as e:
+        logger.error(f"Error updating group {group_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/groups/{group_id}")
+async def delete_group(group_id: int):
+    try:
+        await MapsService.delete_group(group_id)
+        return {"message": "Group deleted"}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 

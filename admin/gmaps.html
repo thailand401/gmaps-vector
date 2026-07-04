@@ -245,6 +245,68 @@
     .opacity-control #tileOpacityVal {
       font-size: 11px; color: #555; font-variant-numeric: tabular-nums;
     }
+
+    /* ── Create Group modal ── */
+    #createGroupModal {
+      position: fixed;
+      top: 70px; left: 16px;
+      width: 320px;
+      max-height: calc(100vh - 90px);
+      overflow-y: auto;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.25);
+      padding: 16px;
+      z-index: 16;
+      display: none;
+      font-size: 13px;
+    }
+    #createGroupModal h3 { font-size: 14px; margin-bottom: 12px; color: #202124; }
+    #createGroupModal .close-btn {
+      position: absolute; top: 10px; right: 12px;
+      cursor: pointer; font-size: 18px; color: #888; line-height: 1;
+      background: none; border: none;
+    }
+    #createGroupModal .close-btn:hover { color: #333; }
+    #createGroupModal select {
+      border: 1px solid #d0d0d0; border-radius: 8px;
+      padding: 6px 8px; font-size: 13px; background: #fafafa; outline: none;
+    }
+    #cgNeighborSel { width: 100%; }
+    #createGroupModal .icon-btn {
+      border: none; border-radius: 8px; padding: 6px 11px;
+      font-size: 15px; line-height: 1; cursor: pointer;
+      background: #34a853; color: #fff; font-weight: 700; flex: 0 0 auto;
+    }
+    #createGroupModal .icon-btn:hover { background: #2d9248; }
+    #createGroupModal .modal-actions button {
+      border: none; border-radius: 8px; padding: 8px 14px;
+      font-size: 13px; cursor: pointer; font-weight: 600; flex: 1;
+    }
+    #cgSave { background: #4285f4; color: #fff; }
+    #cgSave:hover { background: #2a6dd4; }
+    #cgSave:disabled { background: #b9c6e0; cursor: not-allowed; }
+    #cgCancel { background: #f1f3f4; color: #3c4043; }
+    #cgCancel:hover { background: #e2e4e6; }
+
+    /* ── Main create FAB (nút + góc phải dưới, dùng chung) ── */
+    #mainCreateBtn {
+      position: fixed;
+      bottom: 24px; right: 20px;
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      border: none;
+      background: #9aa0a6;                /* xám = disable */
+      color: #fff;
+      font-size: 30px; line-height: 1;
+      cursor: not-allowed;
+      box-shadow: 0 3px 12px rgba(0,0,0,.3);
+      z-index: 12;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, transform .15s;
+    }
+    #mainCreateBtn.active { background: #34a853; cursor: pointer; }   /* xanh = active */
+    #mainCreateBtn.active:hover { background: #2d9248; transform: scale(1.06); }
   </style>
 </head>
 <body>
@@ -274,6 +336,9 @@
 
 <!-- Toast -->
 <div id="toast"></div>
+
+<!-- Main create FAB (nút + dùng chung cho các tính năng create) -->
+<button id="mainCreateBtn" disabled title="Chọn 1 điểm ở chế độ Create Group để bật">+</button>
 
 <!-- Info panel -->
 <div id="infoPanel">
@@ -355,6 +420,41 @@
   </div>
 </div>
 
+<!-- Create Group modal -->
+<div id="createGroupModal">
+  <button class="close-btn" id="cgCloseX">&times;</button>
+  <h3>Tạo Group</h3>
+
+  <div class="modal-field">
+    <label>Tâm (điểm đã chọn)</label>
+    <div id="cgCenter" class="latlng-label">—</div>
+  </div>
+
+  <div class="modal-field">
+    <label>Danh sách đường (main) <span id="cgMainCount"></span></label>
+    <div id="cgMainList" class="nearby-box"></div>
+  </div>
+
+  <div class="modal-field">
+    <label>Thêm đường ≤<span id="cgOuterKm"></span>km (chưa có trong main) <span id="cgOuterCount"></span></label>
+    <div class="row-inline">
+      <select id="cgOuterSel" multiple size="4"></select>
+      <button id="cgAddOuter" class="icon-btn" title="Thêm các đường đã chọn vào main list">+</button>
+    </div>
+  </div>
+
+  <div class="modal-field">
+    <label>Group lân cận (neighbor) <span id="cgNeighborCount"></span></label>
+    <select id="cgNeighborSel" multiple size="4"></select>
+    <small class="modal-hint">Giữ Ctrl/Cmd để chọn nhiều group.</small>
+  </div>
+
+  <div class="modal-actions">
+    <button id="cgSave">Lưu group</button>
+    <button id="cgCancel">Huỷ</button>
+  </div>
+</div>
+
 <!-- Leaflet JS -->
 <script src="js/auth.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -368,6 +468,7 @@ const DEFAULT_LNG  = 106.6297;
 const DEFAULT_ZOOM = 12;
 const NEARBY_RADIUS_KM = 1; // bán kính gộp đường lân cận vào 1 node (Add điểm)
 const GROUP_RADIUS_KM = 1; // bán kính (km) gom đường quanh điểm cho "Create Group"
+const GROUP_OUTER_MULT = 2;  // vùng gấp đôi bán kính để bổ sung đường thủ công vào main list
 const LAST_MARKER_KEY = 'gmaps_last_marker'; // localStorage: toạ độ marker chọn gần nhất
 
 // ══════════════════════════════════════════════════
@@ -1272,13 +1373,14 @@ async function saveSetNode() {
 function setGroupMode(on) {
   groupMode = on;
   if (on) { setMoveMode(false); setAddMode(false); closeAddModal(); closeSetNode(); hideInfo(); }
-  else { clearGroupHighlight(); }
+  else { clearGroupHighlight(); closeCreateGroupModal(); }
   const btn = document.getElementById('btnGroup');
   if (btn) {
     btn.classList.toggle('active', on);
     btn.classList.toggle('secondary', !on);
   }
   document.getElementById('map').style.cursor = on ? 'pointer' : '';
+  updateMainCreateState();
   if (on) showToast(`Chế độ tạo nhóm: BẬT — chọn 1 điểm để gom đường ≤${GROUP_RADIUS_KM}km`);
 }
 
@@ -1289,11 +1391,13 @@ function clearGroupHighlight() {
   if (groupRadiusCircle && map) map.removeLayer(groupRadiusCircle);
   groupRadiusCircle = null;
   groupAnchorMarker = null;
+  updateMainCreateState();
 }
 
 // Chọn 1 điểm làm tâm → tô đỏ mọi điểm thuộc các đường có ≥1 điểm trong bán kính 2km
 function selectGroupAnchor(marker) {
   clearGroupHighlight();
+  closeCreateGroupModal();
   const pos = marker && marker._pos;
   if (!pos || pos.y == null || pos.x == null) return;
   groupAnchorMarker = marker;
@@ -1322,6 +1426,136 @@ function selectGroupAnchor(marker) {
   });
 
   showToast(`Nhóm quanh #${pos.id}: ${streets.length} đường · ${count} điểm ≤${GROUP_RADIUS_KM}km`);
+  updateMainCreateState();
+}
+
+// ══════════════════════════════════════════════════
+//  CREATE GROUP — MODAL & SAVE
+// ══════════════════════════════════════════════════
+// Nút FAB main_create chỉ bật (xanh) khi Create Group + đã chọn 1 điểm
+function updateMainCreateState() {
+  const btn = document.getElementById('mainCreateBtn');
+  if (!btn) return;
+  const enabled = groupMode && !!groupAnchorMarker;
+  btn.classList.toggle('active', enabled);
+  btn.disabled = !enabled;
+  btn.title = enabled ? 'Tạo Group từ điểm đã chọn' : 'Chọn 1 điểm ở chế độ Create Group để bật';
+}
+
+// Click FAB → mở form create phù hợp với mode hiện tại (hiện tại: Create Group)
+function onMainCreate() {
+  if (groupMode && groupAnchorMarker) { openCreateGroupModal(); return; }
+}
+
+// Mở modal tạo Group từ điểm tâm đang chọn
+function openCreateGroupModal() {
+  const pos = groupAnchorMarker && groupAnchorMarker._pos;
+  if (!pos) return;
+  closeAddModal(); closeSetNode();
+
+  document.getElementById('cgCenter').textContent = `${Number(pos.y).toFixed(6)} / ${Number(pos.x).toFixed(6)}`;
+  document.getElementById('cgOuterKm').textContent = (GROUP_RADIUS_KM * GROUP_OUTER_MULT);
+
+  // Main list = đường auto-pick trong bán kính
+  const mainStreets = getNearbyStreets(pos.y, pos.x, GROUP_RADIUS_KM);
+  const mainSet = new Set(mainStreets.map(s => s.id));
+  const listEl = document.getElementById('cgMainList');
+  listEl.innerHTML = '';
+  mainStreets.forEach(s => appendStreetRow(listEl, s.id, cgUpdateCounts));
+
+  // Dropdown second = đường trong vùng gấp đôi bán kính, chưa có trong main
+  const outer = getNearbyStreets(pos.y, pos.x, GROUP_RADIUS_KM * GROUP_OUTER_MULT).filter(s => !mainSet.has(s.id));
+  const outerSel = document.getElementById('cgOuterSel');
+  outerSel.innerHTML = '';
+  outer.forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id; o.textContent = `${s.name} (#${s.id})`;
+    outerSel.appendChild(o);
+  });
+  document.getElementById('cgOuterCount').textContent = outer.length ? `(${outer.length})` : '';
+
+  // Neighbor dropdown = tất cả group đang có trong hệ thống
+  loadGroupsIntoNeighbor();
+
+  cgUpdateCounts();
+  document.getElementById('createGroupModal').style.display = 'block';
+}
+
+// Đếm đường trong main list + bật/tắt nút Lưu
+function cgUpdateCounts() {
+  const n = document.querySelectorAll('#cgMainList [data-street-id]').length;
+  document.getElementById('cgMainCount').textContent = n ? `(${n})` : '';
+  document.getElementById('cgSave').disabled = n === 0;
+}
+
+// Thêm các đường ngoài bán kính (đã chọn) vào main list
+function cgAddOuterStreets() {
+  const sel = document.getElementById('cgOuterSel');
+  const chosen = [...sel.selectedOptions];
+  if (!chosen.length) return;
+  const listEl = document.getElementById('cgMainList');
+  chosen.forEach(o => {
+    const id = parseInt(o.value);
+    if (id) { appendStreetRow(listEl, id, cgUpdateCounts); o.remove(); }
+  });
+  const remain = sel.options.length;
+  document.getElementById('cgOuterCount').textContent = remain ? `(${remain})` : '';
+  cgUpdateCounts();
+}
+
+// Nạp toàn bộ group vào dropdown neighbor (multi-select)
+async function loadGroupsIntoNeighbor() {
+  const sel = document.getElementById('cgNeighborSel');
+  const cnt = document.getElementById('cgNeighborCount');
+  sel.innerHTML = '';
+  cnt.textContent = '…';
+  try {
+    const groups = await apiFetch('/groups');
+    (groups || []).forEach(g => {
+      const o = document.createElement('option');
+      const nStreets = Array.isArray(g.streets) ? g.streets.length : 0;
+      o.value = g.id;
+      o.textContent = `Group #${g.id} · ${nStreets} đường`;
+      sel.appendChild(o);
+    });
+    cnt.textContent = `(${(groups || []).length})`;
+  } catch (e) {
+    console.error('loadGroupsIntoNeighbor', e);
+    cnt.textContent = '(lỗi tải)';
+  }
+}
+
+function closeCreateGroupModal() {
+  const el = document.getElementById('createGroupModal');
+  if (el) el.style.display = 'none';
+}
+
+// Lưu group lên bảng Groups qua API: lat/long_center = điểm tâm, streets = main list, neighbor = group đã chọn
+async function saveCreateGroup() {
+  const pos = groupAnchorMarker && groupAnchorMarker._pos;
+  if (!pos) { alert('Chưa có điểm tâm.'); return; }
+  const streets = [...document.querySelectorAll('#cgMainList [data-street-id]')]
+    .map(el => parseInt(el.getAttribute('data-street-id'))).filter(Boolean);
+  if (!streets.length) { alert('Group cần ít nhất 1 đường.'); return; }
+  const neighbor = [...document.getElementById('cgNeighborSel').selectedOptions]
+    .map(o => parseInt(o.value)).filter(Boolean);
+
+  const btn = document.getElementById('cgSave');
+  btn.disabled = true;
+  try {
+    const g = await apiSend('/groups', 'POST', {
+      lat_center: pos.y,
+      long_center: pos.x,
+      streets,
+      neighbor,
+    });
+    showToast(`Đã tạo Group #${g.id}: ${streets.length} đường · ${neighbor.length} neighbor`);
+    closeCreateGroupModal();
+  } catch (e) {
+    console.error('saveCreateGroup', e);
+    alert('Lưu group thất bại.');
+    btn.disabled = false;
+  }
 }
 
 // ══════════════════════════════════════════════════
@@ -1448,6 +1682,11 @@ function setupUIListeners() {
 
   document.getElementById('btnAdd').addEventListener('click', () => setAddMode(!addMode));
   document.getElementById('btnGroup').addEventListener('click', () => setGroupMode(!groupMode));
+  document.getElementById('mainCreateBtn').addEventListener('click', onMainCreate);
+  document.getElementById('cgAddOuter').addEventListener('click', cgAddOuterStreets);
+  document.getElementById('cgSave').addEventListener('click', saveCreateGroup);
+  document.getElementById('cgCancel').addEventListener('click', closeCreateGroupModal);
+  document.getElementById('cgCloseX').addEventListener('click', closeCreateGroupModal);
   document.getElementById('btnCreateDistrict').addEventListener('click', onCreateDistrict);
   document.getElementById('btnCreateStreet').addEventListener('click', onCreateStreet);
   document.getElementById('btnAddNearby').addEventListener('click', addNearbyStreet);

@@ -4,6 +4,7 @@ from models import (
     District, DistrictCreate, DistrictUpdate,
     Street, StreetCreate, StreetUpdate,
     Position, PositionCreate, PositionUpdate,
+    Group, GroupCreate, GroupUpdate,
 )
 from typing import List, Optional
 import unicodedata
@@ -530,6 +531,67 @@ class MapsService:
             return created
         except Exception as e:
             raise Exception(f"Failed to create/update positions bulk: {str(e)}")
+
+    # ==================== GROUPS ====================
+    @staticmethod
+    async def get_groups() -> List[Group]:
+        try:
+            result = supabase.table("Groups").select("*").order("id").execute()
+            return [Group(**item) for item in (result.data or [])]
+        except Exception as e:
+            raise Exception(f"Failed to fetch groups: {str(e)}")
+
+    @staticmethod
+    async def get_group_by_id(group_id: int) -> Optional[Group]:
+        try:
+            result = supabase.table("Groups").select("*").eq("id", group_id).limit(1).execute()
+            return Group(**result.data[0]) if result.data else None
+        except Exception as e:
+            raise Exception(f"Failed to fetch group: {str(e)}")
+
+    @staticmethod
+    async def create_group(data: GroupCreate) -> Group:
+        try:
+            next_id = _next_id("Groups")
+            payload = {
+                "id": next_id,
+                "lat_center": data.lat_center,
+                "long_center": data.long_center,
+                "streets": [int(s) for s in (data.streets or [])],
+                "neighbor": [int(n) for n in (data.neighbor or [])],
+            }
+            result = supabase.table("Groups").insert(payload).execute()
+            if not result.data:
+                raise Exception("Failed to insert group")
+            return Group(**result.data[0])
+        except Exception as e:
+            raise Exception(f"Failed to create group: {str(e)}")
+
+    @staticmethod
+    async def update_group(group_id: int, data: GroupUpdate) -> Group:
+        try:
+            payload = {}
+            for field in ("lat_center", "long_center", "streets", "neighbor"):
+                val = getattr(data, field)
+                if val is None:
+                    continue
+                payload[field] = [int(x) for x in val] if field in ("streets", "neighbor") else val
+            if not payload:
+                raise Exception("No valid fields to update")
+            result = supabase.table("Groups").update(payload).eq("id", group_id).execute()
+            if not result.data:
+                raise Exception(f"Group #{group_id} not found or update failed")
+            return Group(**result.data[0])
+        except Exception as e:
+            raise Exception(f"Failed to update group: {str(e)}")
+
+    @staticmethod
+    async def delete_group(group_id: int) -> bool:
+        try:
+            supabase.table("Groups").delete().eq("id", group_id).execute()
+            return True
+        except Exception as e:
+            raise Exception(f"Failed to delete group: {str(e)}")
 
     @staticmethod
     async def update_poi(poi_id: int, fields: dict) -> dict:
