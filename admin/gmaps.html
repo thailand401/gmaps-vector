@@ -357,18 +357,26 @@
       color: #3c4043; font-size: 12px; cursor: pointer;
     }
     #editStreetModal .es-oneway-line input { width: auto; }
-    .es-edge-row {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 6px; padding: 4px 2px; font-size: 12px; color: #3c4043;
-      border-bottom: 1px solid #eee;
+    #esEdgesList { display: flex; flex-direction: column; gap: 8px; }
+    #esEdgesList .empty { color: #999; font-size: 12px; padding: 4px 2px; }
+    .es-edge-block {
+      border: 1px solid #e2e4e6; border-radius: 8px; padding: 8px; background: #fafafa;
     }
-    .es-edge-row:last-child { border-bottom: none; }
-    .es-edge-row .es-edge-info { flex: 1; min-width: 0; word-break: break-word; }
-    .es-edge-row .es-edge-oneway { color: #d93025; font-weight: 700; }
-    .es-edge-row button {
+    .es-edge-block.oneway { border-color: #f6c6c1; background: #fff6f5; }
+    .es-edge-head {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+      font-size: 12px; font-weight: 600; color: #3c4043;
+    }
+    .es-edge-head .es-edge-title { flex: 1; }
+    .es-edge-head label {
+      display: flex; align-items: center; gap: 4px; font-weight: 400; cursor: pointer; margin: 0;
+    }
+    .es-edge-head input { width: auto; }
+    .es-edge-head .es-edge-del {
       border: none; background: none; color: #d33; cursor: pointer;
-      font-size: 15px; line-height: 1; flex: 0 0 auto;
+      font-size: 16px; line-height: 1; flex: 0 0 auto;
     }
+    .es-edge-block select { width: 100%; }
     #editStreetModal .modal-actions button {
       border: none; border-radius: 8px; padding: 8px 14px;
       font-size: 13px; cursor: pointer; font-weight: 600; flex: 1;
@@ -605,21 +613,16 @@
   </div>
 
   <div class="modal-field">
-    <label>Điểm bắt đầu (start)</label>
-    <select id="esStartSel"><option value="">-- Chọn điểm start --</option></select>
-  </div>
-
-  <div class="modal-field">
-    <label>Thứ tự điểm của cạnh <span id="esPathCount"></span></label>
-    <select id="esPathSel" multiple size="6"></select>
-    <label class="es-oneway-line"><input type="checkbox" id="esEdgeOneway" /> Cạnh 1 chiều (đi theo thứ tự trên)</label>
-    <button id="esAddEdge">+ Thêm cạnh</button>
-    <small class="modal-hint">Chọn start → chọn điểm (bỏ trống = tất cả điểm) → “Thêm cạnh”. Một đường có thể có nhiều cạnh.</small>
+    <label>Tất cả điểm của đường <span id="esAllPosCount"></span></label>
+    <select id="esAllPosSel" multiple size="6"></select>
+    <label class="es-oneway-line"><input type="checkbox" id="esEdgeOneway" /> Cạnh 1 chiều (theo thứ tự chọn)</label>
+    <button id="esAddEdge">+ Thêm cạnh từ điểm đã chọn</button>
+    <small class="modal-hint">Chọn nhiều điểm ở danh sách trên rồi bấm “Thêm cạnh”. Mỗi cạnh tạo 1 ô riêng bên dưới.</small>
   </div>
 
   <div class="modal-field">
     <label>Các cạnh của đường <span id="esEdgesCount"></span></label>
-    <div id="esEdgesList" class="nearby-box"></div>
+    <div id="esEdgesList"></div>
   </div>
 
   <div class="modal-actions">
@@ -687,14 +690,14 @@ let selectedStreetId = null; // đường đang chọn trên toolbar (để sử
 let esEditId         = null; // street id đang sửa trong modal
 let esStreetPoints   = [];   // [{id,lat,lng}] các point của street đang sửa
 let esEdges          = [];   // [{ids:[+id...], oneway:bool}] các cạnh của đường (positions 2-D)
-let esHiliteMarkers  = [];   // marker đang tô sáng theo lựa chọn trong esPathSel
+let esHiliteMarkers  = [];   // marker đang tô sáng theo lựa chọn trong dropdown điểm
 let pointPickMode   = null;  // 'start' | 'end' | null — chế độ chọn điểm đầu/đích
 let startPickMarker = null, endPickMarker = null;   // marker cờ người dùng đặt
 let startNearestId  = null, endNearestId  = null;   // id position gần nhất đang tô màu
 let startTempMarker = null, endTempMarker = null;   // marker tạm khi nearest không hiển thị
 const PT_START_COLOR = '#0b8043';  // xanh lá — nearest của điểm đầu
 const PT_END_COLOR   = '#d93025';  // đỏ — nearest của điểm đích
-const ES_SELECT_COLOR = '#ff9800'; // cam — point đang chọn trong esPathSel
+const ES_SELECT_COLOR = '#ff9800'; // cam — point đang chọn trong dropdown điểm
 
 // ══════════════════════════════════════════════════
 //  HELPERS
@@ -2132,60 +2135,83 @@ function orderPointsFromStart(points, startId) {
   return result;
 }
 
-// Đổ dropdown 2 (thứ tự point) theo start đã chọn ở dropdown 1
-function esRenderPath() {
-  const startId = parseInt(document.getElementById('esStartSel').value);
-  const pathSel = document.getElementById('esPathSel');
-  pathSel.innerHTML = '';
-  if (!startId) { document.getElementById('esPathCount').textContent = ''; return; }
-  const ordered = orderPointsFromStart(esStreetPoints, startId);
-  ordered.forEach((p, i) => {
+// Đổ dropdown master: tất cả point của đường
+function esRenderAllPos() {
+  const sel = document.getElementById('esAllPosSel');
+  sel.innerHTML = '';
+  esStreetPoints.forEach(p => {
     const o = document.createElement('option');
     o.value = String(p.id);
-    o.textContent = `${i + 1}. #${p.id}`;
-    pathSel.appendChild(o);
+    o.textContent = `#${p.id} (${p.lat.toFixed(4)}, ${p.lng.toFixed(4)})`;
+    sel.appendChild(o);
   });
-  document.getElementById('esPathCount').textContent = `(${ordered.length})`;
+  document.getElementById('esAllPosCount').textContent = esStreetPoints.length ? `(${esStreetPoints.length})` : '';
 }
 
-// Render danh sách các cạnh hiện có của đường
+// Render các cạnh: mỗi cạnh là 1 block có dropdown multi-select riêng
 function esRenderEdges() {
   const listEl = document.getElementById('esEdgesList');
   listEl.innerHTML = '';
   if (!esEdges.length) {
     listEl.innerHTML = '<div class="empty">Chưa có cạnh nào.</div>';
-  } else {
-    esEdges.forEach((edge, idx) => {
-      const row = document.createElement('div');
-      row.className = 'es-edge-row';
-      const info = document.createElement('span');
-      info.className = 'es-edge-info';
-      const arrow = edge.oneway ? ' → ' : ' ↔ ';
-      info.textContent = `${idx + 1}. ` + edge.ids.map(id => '#' + id).join(arrow)
-        + (edge.oneway ? ' (1 chiều)' : '');
-      const del = document.createElement('button');
-      del.textContent = '×';
-      del.title = 'Xoá cạnh';
-      del.addEventListener('click', () => { esEdges.splice(idx, 1); esRenderEdges(); });
-      row.appendChild(info);
-      row.appendChild(del);
-      listEl.appendChild(row);
-    });
+    document.getElementById('esEdgesCount').textContent = '';
+    return;
   }
-  document.getElementById('esEdgesCount').textContent = esEdges.length ? `(${esEdges.length})` : '';
+  esEdges.forEach((edge, idx) => {
+    const block = document.createElement('div');
+    block.className = 'es-edge-block' + (edge.oneway ? ' oneway' : '');
+
+    const head = document.createElement('div');
+    head.className = 'es-edge-head';
+    const title = document.createElement('span');
+    title.className = 'es-edge-title';
+    title.textContent = `Cạnh ${idx + 1} (${edge.ids.length} điểm)`;
+    const owLabel = document.createElement('label');
+    const owCb = document.createElement('input');
+    owCb.type = 'checkbox';
+    owCb.checked = !!edge.oneway;
+    owCb.addEventListener('change', () => {
+      edge.oneway = owCb.checked;
+      block.classList.toggle('oneway', owCb.checked);
+    });
+    owLabel.appendChild(owCb);
+    owLabel.appendChild(document.createTextNode(' 1 chiều'));
+    const del = document.createElement('button');
+    del.className = 'es-edge-del';
+    del.textContent = '×';
+    del.title = 'Xoá cạnh';
+    del.addEventListener('click', () => { esEdges.splice(idx, 1); esRenderEdges(); });
+    head.appendChild(title);
+    head.appendChild(owLabel);
+    head.appendChild(del);
+
+    const sel = document.createElement('select');
+    sel.multiple = true;
+    sel.size = Math.min(Math.max(edge.ids.length, 2), 6);
+    edge.ids.forEach((id, i) => {
+      const o = document.createElement('option');
+      o.value = String(id);
+      o.textContent = `${i + 1}. #${id}`;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => esHighlightFromSelect(sel));
+
+    block.appendChild(head);
+    block.appendChild(sel);
+    listEl.appendChild(block);
+  });
+  document.getElementById('esEdgesCount').textContent = `(${esEdges.length})`;
 }
 
-// Thêm 1 cạnh từ các điểm đang chọn ở dropdown thứ tự (bỏ trống = tất cả điểm)
+// Thêm 1 cạnh từ các điểm đang chọn ở dropdown master
 function esAddEdge() {
-  const pathSel = document.getElementById('esPathSel');
-  let opts = [...pathSel.selectedOptions];
-  if (!opts.length) opts = [...pathSel.options];
-  const ids = opts.map(o => Math.abs(parseInt(o.value))).filter(v => !Number.isNaN(v));
-  if (ids.length < 2) { showToast('Cạnh cần ít nhất 2 điểm'); return; }
+  const sel = document.getElementById('esAllPosSel');
+  const ids = [...sel.selectedOptions].map(o => Math.abs(parseInt(o.value))).filter(v => !Number.isNaN(v));
+  if (ids.length < 2) { showToast('Chọn ít nhất 2 điểm ở danh sách trên để tạo cạnh'); return; }
   const oneway = document.getElementById('esEdgeOneway').checked;
   esEdges.push({ ids, oneway });
   esRenderEdges();
-  pathSel.selectedIndex = -1;
+  sel.selectedIndex = -1;
   document.getElementById('esEdgeOneway').checked = false;
   esClearHighlight();
 }
@@ -2203,13 +2229,12 @@ function esClearHighlight() {
   esHiliteMarkers = [];
 }
 
-// Tô sáng + pan tới marker của các point đang chọn trong esPathSel
-function esHighlightSelected() {
+// Tô sáng + pan tới marker của các point đang chọn trong 1 dropdown bất kỳ
+function esHighlightFromSelect(selectEl) {
   esClearHighlight();
-  const pathSel = document.getElementById('esPathSel');
   const bounds = L.latLngBounds();
   let n = 0;
-  [...pathSel.selectedOptions].forEach(o => {
+  [...selectEl.selectedOptions].forEach(o => {
     const id = Math.abs(parseInt(o.value));
     const m = esFindMarker(id);
     if (!m) return;
@@ -2223,9 +2248,6 @@ function esHighlightSelected() {
     else map.fitBounds(bounds, { padding: [60, 60] });
   }
 }
-
-// Nút Oneway: đảo dấu (âm/dương) các option đang chọn ở dropdown 2
-// (đã thay bằng cơ chế cạnh: esAddEdge + esEdgeOneway)
 
 // Đổ city/district vào 2 dropdown của modal (city clone từ toolbar, district = tất cả)
 function esFillCityDistrict(cityId, districtId) {
@@ -2304,22 +2326,8 @@ async function openEditStreetModal(streetId) {
   coordMap.forEach((_, id) => { if (!seen.has(id)) { orderedIds.push(id); seen.add(id); } });
   esStreetPoints = orderedIds.map(id => coordMap.get(id));
 
-  // dropdown start: tất cả point; mặc định = điểm đầu của cạnh đầu tiên nếu có
-  const startSel = document.getElementById('esStartSel');
-  startSel.innerHTML = '<option value="">-- Chọn điểm start --</option>';
-  esStreetPoints.forEach(p => {
-    const o = document.createElement('option');
-    o.value = String(p.id);
-    o.textContent = `#${p.id} (${p.lat.toFixed(4)}, ${p.lng.toFixed(4)})`;
-    startSel.appendChild(o);
-  });
-  let defStart = null;
-  if (esEdges.length && esEdges[0].ids.length) defStart = esEdges[0].ids[0];
-  if (defStart == null && esStreetPoints.length) defStart = esStreetPoints[0].id;
-  if (defStart != null && esStreetPoints.some(p => p.id === defStart)) startSel.value = String(defStart);
-
-  esRenderPath();     // đổ dropdown thứ tự để dựng cạnh mới
-  esRenderEdges();    // hiển thị các cạnh hiện có
+  esRenderAllPos();   // đổ dropdown master: tất cả point của đường
+  esRenderEdges();    // hiển thị các cạnh hiện có (mỗi cạnh 1 dropdown)
   document.getElementById('esSave').disabled = false;
   document.getElementById('editStreetModal').style.display = 'block';
 }
@@ -2504,8 +2512,7 @@ function setupUIListeners() {
   document.getElementById('esSave').addEventListener('click', saveEditStreet);
   document.getElementById('esCancel').addEventListener('click', closeEditStreetModal);
   document.getElementById('esCloseX').addEventListener('click', closeEditStreetModal);
-  document.getElementById('esStartSel').addEventListener('change', esRenderPath);
-  document.getElementById('esPathSel').addEventListener('change', esHighlightSelected);
+  document.getElementById('esAllPosSel').addEventListener('change', function () { esHighlightFromSelect(this); });
   document.getElementById('esAddEdge').addEventListener('click', esAddEdge);
   document.getElementById('btnCreateDistrict').addEventListener('click', onCreateDistrict);
   document.getElementById('btnCreateStreet').addEventListener('click', onCreateStreet);
