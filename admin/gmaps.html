@@ -345,12 +345,30 @@
       display: flex; align-items: center; gap: 6px; color: #3c4043; font-size: 13px; margin: 0; cursor: pointer;
     }
     #editStreetModal .es-checks input { width: auto; }
-    #esOneway {
-      border: none; border-radius: 8px; padding: 6px 12px;
-      font-size: 13px; line-height: 1; cursor: pointer; font-weight: 600;
-      background: #fbbc04; color: #3c4043; flex: 0 0 auto; white-space: nowrap;
+    #esAddEdge {
+      width: 100%; margin-top: 8px;
+      border: none; border-radius: 8px; padding: 7px 12px;
+      font-size: 13px; cursor: pointer; font-weight: 600;
+      background: #34a853; color: #fff;
     }
-    #esOneway:hover { background: #f0b400; }
+    #esAddEdge:hover { background: #2d9248; }
+    #editStreetModal .es-oneway-line {
+      display: flex; align-items: center; gap: 6px; margin-top: 8px;
+      color: #3c4043; font-size: 12px; cursor: pointer;
+    }
+    #editStreetModal .es-oneway-line input { width: auto; }
+    .es-edge-row {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 6px; padding: 4px 2px; font-size: 12px; color: #3c4043;
+      border-bottom: 1px solid #eee;
+    }
+    .es-edge-row:last-child { border-bottom: none; }
+    .es-edge-row .es-edge-info { flex: 1; min-width: 0; word-break: break-word; }
+    .es-edge-row .es-edge-oneway { color: #d93025; font-weight: 700; }
+    .es-edge-row button {
+      border: none; background: none; color: #d33; cursor: pointer;
+      font-size: 15px; line-height: 1; flex: 0 0 auto;
+    }
     #editStreetModal .modal-actions button {
       border: none; border-radius: 8px; padding: 8px 14px;
       font-size: 13px; cursor: pointer; font-weight: 600; flex: 1;
@@ -592,12 +610,16 @@
   </div>
 
   <div class="modal-field">
-    <label>Thứ tự điểm start → end <span id="esPathCount"></span></label>
-    <div class="row-inline">
-      <select id="esPathSel" multiple size="6"></select>
-      <button id="esOneway" title="Oneway: đổi các điểm đã chọn thành số âm">Oneway</button>
-    </div>
-    <small class="modal-hint">Chọn điểm rồi bấm Oneway để đánh dấu 1 chiều (id → số âm).</small>
+    <label>Thứ tự điểm của cạnh <span id="esPathCount"></span></label>
+    <select id="esPathSel" multiple size="6"></select>
+    <label class="es-oneway-line"><input type="checkbox" id="esEdgeOneway" /> Cạnh 1 chiều (đi theo thứ tự trên)</label>
+    <button id="esAddEdge">+ Thêm cạnh</button>
+    <small class="modal-hint">Chọn start → chọn điểm (bỏ trống = tất cả điểm) → “Thêm cạnh”. Một đường có thể có nhiều cạnh.</small>
+  </div>
+
+  <div class="modal-field">
+    <label>Các cạnh của đường <span id="esEdgesCount"></span></label>
+    <div id="esEdgesList" class="nearby-box"></div>
   </div>
 
   <div class="modal-actions">
@@ -664,7 +686,7 @@ let cgEditId        = null; // modal đang sửa group id nào (null = tạo m�
 let selectedStreetId = null; // đường đang chọn trên toolbar (để sửa street)
 let esEditId         = null; // street id đang sửa trong modal
 let esStreetPoints   = [];   // [{id,lat,lng}] các point của street đang sửa
-let esStoredPositions = [];  // [±id] positions đã lưu (giữ dấu âm = 1 chiều)
+let esEdges          = [];   // [{ids:[+id...], oneway:bool}] các cạnh của đường (positions 2-D)
 let esHiliteMarkers  = [];   // marker đang tô sáng theo lựa chọn trong esPathSel
 let pointPickMode   = null;  // 'start' | 'end' | null — chế độ chọn điểm đầu/đích
 let startPickMarker = null, endPickMarker = null;   // marker cờ người dùng đặt
@@ -2126,18 +2148,46 @@ function esRenderPath() {
   document.getElementById('esPathCount').textContent = `(${ordered.length})`;
 }
 
-// Render dropdown 2 từ positions đã lưu (giữ nguyên thứ tự + dấu âm 1 chiều)
-function esRenderStoredPath() {
+// Render danh sách các cạnh hiện có của đường
+function esRenderEdges() {
+  const listEl = document.getElementById('esEdgesList');
+  listEl.innerHTML = '';
+  if (!esEdges.length) {
+    listEl.innerHTML = '<div class="empty">Chưa có cạnh nào.</div>';
+  } else {
+    esEdges.forEach((edge, idx) => {
+      const row = document.createElement('div');
+      row.className = 'es-edge-row';
+      const info = document.createElement('span');
+      info.className = 'es-edge-info';
+      const arrow = edge.oneway ? ' → ' : ' ↔ ';
+      info.textContent = `${idx + 1}. ` + edge.ids.map(id => '#' + id).join(arrow)
+        + (edge.oneway ? ' (1 chiều)' : '');
+      const del = document.createElement('button');
+      del.textContent = '×';
+      del.title = 'Xoá cạnh';
+      del.addEventListener('click', () => { esEdges.splice(idx, 1); esRenderEdges(); });
+      row.appendChild(info);
+      row.appendChild(del);
+      listEl.appendChild(row);
+    });
+  }
+  document.getElementById('esEdgesCount').textContent = esEdges.length ? `(${esEdges.length})` : '';
+}
+
+// Thêm 1 cạnh từ các điểm đang chọn ở dropdown thứ tự (bỏ trống = tất cả điểm)
+function esAddEdge() {
   const pathSel = document.getElementById('esPathSel');
-  pathSel.innerHTML = '';
-  const valid = esStoredPositions.filter(v => esStreetPoints.some(p => p.id === Math.abs(v)));
-  valid.forEach((v, i) => {
-    const o = document.createElement('option');
-    o.value = String(v);
-    o.textContent = `${i + 1}. #${v}`;
-    pathSel.appendChild(o);
-  });
-  document.getElementById('esPathCount').textContent = `(${valid.length})`;
+  let opts = [...pathSel.selectedOptions];
+  if (!opts.length) opts = [...pathSel.options];
+  const ids = opts.map(o => Math.abs(parseInt(o.value))).filter(v => !Number.isNaN(v));
+  if (ids.length < 2) { showToast('Cạnh cần ít nhất 2 điểm'); return; }
+  const oneway = document.getElementById('esEdgeOneway').checked;
+  esEdges.push({ ids, oneway });
+  esRenderEdges();
+  pathSel.selectedIndex = -1;
+  document.getElementById('esEdgeOneway').checked = false;
+  esClearHighlight();
 }
 
 // Tìm marker trên map theo id point
@@ -2175,17 +2225,7 @@ function esHighlightSelected() {
 }
 
 // Nút Oneway: đảo dấu (âm/dương) các option đang chọn ở dropdown 2
-function esOneway() {
-  const pathSel = document.getElementById('esPathSel');
-  const chosen = [...pathSel.selectedOptions];
-  if (!chosen.length) { showToast('Chọn điểm ở danh sách thứ tự trước'); return; }
-  chosen.forEach(o => {
-    const nv = -parseInt(o.value);
-    const order = o.textContent.split('.')[0];
-    o.value = String(nv);
-    o.textContent = `${order}. #${nv}`;
-  });
-}
+// (đã thay bằng cơ chế cạnh: esAddEdge + esEdgeOneway)
 
 // Đổ city/district vào 2 dropdown của modal (city clone từ toolbar, district = tất cả)
 function esFillCityDistrict(cityId, districtId) {
@@ -2227,19 +2267,27 @@ async function openEditStreetModal(streetId) {
   document.getElementById('esToll').checked = !!full.toll;
   document.getElementById('esFlooding').checked = !!full.flooding;
 
-  // các point của street: ưu tiên field positions của street, fallback query theo street_id
+  // các point của street: parse positions 2-D (mỗi phần tử = 1 cạnh); hỗ trợ mảng 1-D cũ
   const stored = Array.isArray(full.positions) ? full.positions : [];
-  const storedSigned = stored.map(v => parseInt(v)).filter(v => !Number.isNaN(v));
-  const storedIds = storedSigned.map(v => Math.abs(v));
+  const edges2d = (stored.length && Array.isArray(stored[0]))
+    ? stored
+    : (stored.length ? [stored] : []);
+  esEdges = edges2d
+    .map(edge => {
+      const arr = (edge || []).map(v => parseInt(v)).filter(v => !Number.isNaN(v));
+      return { ids: arr.map(v => Math.abs(v)), oneway: arr.length > 0 && arr.every(v => v < 0) };
+    })
+    .filter(e => e.ids.length);
+  const storedIds = [...new Set(esEdges.flatMap(e => e.ids))];
 
-  // Nạp toạ độ: lấy nhanh theo street_id, sau đó bổ sung các id còn thiếu từ field positions
+  // Nạp toạ độ: lấy nhanh theo street_id, sau đó bổ sung các id còn thiếu từ các cạnh
   const coordMap = new Map();
   let pts = [];
   try { pts = await apiFetch('/positions?street_id=' + streetId); } catch (e) { console.error('get points', e); }
   (pts || []).forEach(p => {
     if (p.x != null && p.y != null) coordMap.set(p.id, { id: p.id, lat: Number(p.y), lng: Number(p.x) });
   });
-  const missing = [...new Set(storedIds)].filter(id => !coordMap.has(id));
+  const missing = storedIds.filter(id => !coordMap.has(id));
   if (missing.length) {
     const fetched = await Promise.all(missing.map(id =>
       apiFetch('/positions/' + id).catch(e => { console.error('get point', id, e); return null; })
@@ -2249,14 +2297,14 @@ async function openEditStreetModal(streetId) {
     });
   }
 
-  // Thứ tự: theo field positions trước, các point còn lại append phía sau
+  // Thứ tự: theo các cạnh trước, các point còn lại append phía sau
   const orderedIds = [];
   const seen = new Set();
   storedIds.forEach(id => { if (coordMap.has(id) && !seen.has(id)) { orderedIds.push(id); seen.add(id); } });
   coordMap.forEach((_, id) => { if (!seen.has(id)) { orderedIds.push(id); seen.add(id); } });
   esStreetPoints = orderedIds.map(id => coordMap.get(id));
 
-  // dropdown 1 (start): tất cả point; mặc định = |positions[0]| nếu có, else point đầu
+  // dropdown start: tất cả point; mặc định = điểm đầu của cạnh đầu tiên nếu có
   const startSel = document.getElementById('esStartSel');
   startSel.innerHTML = '<option value="">-- Chọn điểm start --</option>';
   esStreetPoints.forEach(p => {
@@ -2266,13 +2314,12 @@ async function openEditStreetModal(streetId) {
     startSel.appendChild(o);
   });
   let defStart = null;
-  if (storedIds.length) defStart = storedIds[0];
+  if (esEdges.length && esEdges[0].ids.length) defStart = esEdges[0].ids[0];
   if (defStart == null && esStreetPoints.length) defStart = esStreetPoints[0].id;
   if (defStart != null && esStreetPoints.some(p => p.id === defStart)) startSel.value = String(defStart);
 
-  // Giữ nguyên thứ tự + dấu âm (1 chiều) từ positions đã lưu để hiển thị đúng
-  esStoredPositions = storedSigned;
-  esRenderStoredPath();
+  esRenderPath();     // đổ dropdown thứ tự để dựng cạnh mới
+  esRenderEdges();    // hiển thị các cạnh hiện có
   document.getElementById('esSave').disabled = false;
   document.getElementById('editStreetModal').style.display = 'block';
 }
@@ -2294,8 +2341,10 @@ async function saveEditStreet() {
   const cityId = parseInt(document.getElementById('esCity').value) || null;
   const toll = document.getElementById('esToll').checked;
   const flooding = document.getElementById('esFlooding').checked;
-  const positions = [...document.getElementById('esPathSel').options]
-    .map(o => parseInt(o.value)).filter(v => !Number.isNaN(v));
+  // positions 2-D: mỗi cạnh = mảng id; cạnh 1 chiều → toàn bộ id âm
+  const positions = esEdges
+    .map(e => (e.oneway ? e.ids.map(id => -Math.abs(id)) : e.ids.map(id => Math.abs(id))))
+    .filter(edge => edge.length);
 
   const btn = document.getElementById('esSave');
   btn.disabled = true;
@@ -2311,7 +2360,7 @@ async function saveEditStreet() {
     }
     const opt = [...document.getElementById('selStreet').options].find(o => String(o.value) === String(esEditId));
     if (opt) opt.textContent = name;
-    showToast(`Đã lưu đường #${esEditId}: ${positions.length} điểm`);
+    showToast(`Đã lưu đường #${esEditId}: ${positions.length} cạnh`);
     closeEditStreetModal();
   } catch (e) {
     console.error('saveEditStreet', e);
@@ -2457,7 +2506,7 @@ function setupUIListeners() {
   document.getElementById('esCloseX').addEventListener('click', closeEditStreetModal);
   document.getElementById('esStartSel').addEventListener('change', esRenderPath);
   document.getElementById('esPathSel').addEventListener('change', esHighlightSelected);
-  document.getElementById('esOneway').addEventListener('click', esOneway);
+  document.getElementById('esAddEdge').addEventListener('click', esAddEdge);
   document.getElementById('btnCreateDistrict').addEventListener('click', onCreateDistrict);
   document.getElementById('btnCreateStreet').addEventListener('click', onCreateStreet);
   document.getElementById('btnAddNearby').addEventListener('click', addNearbyStreet);

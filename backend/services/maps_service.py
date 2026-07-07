@@ -38,6 +38,55 @@ class MapsService:
             'ban_hours': item.get('ban_hours'),
             'ban_weight': item.get('ban_weight'),
         }
+
+    @staticmethod
+    def _flatten_positions(raw) -> list:
+        """Streets.positions có thể là 2-D ([[id,...], ...]) hoặc 1-D cũ ([id,...]).
+        Trả về danh sách id dương (bỏ dấu 1 chiều) đã phẳng, giữ thứ tự, không trùng."""
+        out = []
+        seen = set()
+        for item in (raw or []):
+            group = item if isinstance(item, list) else [item]
+            for p in group:
+                try:
+                    pid = abs(int(p))
+                except (TypeError, ValueError):
+                    continue
+                if pid not in seen:
+                    seen.add(pid)
+                    out.append(pid)
+        return out
+
+    @staticmethod
+    def _append_pos_id(raw, pid: int):
+        """Thêm 1 id điểm vào Streets.positions (cấu trúc 2-D). Không thêm nếu đã tồn tại.
+        - 2-D: append vào cạnh cuối cùng.
+        - 1-D cũ: giữ nguyên dạng 1-D và append.
+        - rỗng: tạo cạnh đầu tiên [[pid]]."""
+        edges = list(raw or [])
+        if pid in MapsService._flatten_positions(edges):
+            return edges
+        if edges and all(isinstance(e, list) for e in edges):
+            edges[-1] = list(edges[-1]) + [pid]
+            return edges
+        if edges:  # 1-D legacy
+            return edges + [pid]
+        return [[pid]]
+
+    @staticmethod
+    def _remove_pos_id(raw, pid: int):
+        """Xoá id điểm khỏi Streets.positions (cả 2-D và 1-D), so khớp theo giá trị tuyệt đối.
+        Bỏ các cạnh rỗng sau khi xoá."""
+        edges = list(raw or [])
+        target = abs(int(pid))
+        if edges and all(isinstance(e, list) for e in edges):
+            new = []
+            for e in edges:
+                filt = [i for i in e if abs(int(i)) != target]
+                if filt:
+                    new.append(filt)
+            return new
+        return [i for i in edges if abs(int(i)) != target]
     @staticmethod
     async def get_all_cities() -> List[City]:
         try:
@@ -439,10 +488,8 @@ class MapsService:
             if getattr(data, 'street_id', None):
                 try:
                     street_row = supabase.table("Streets").select("positions").eq("id", data.street_id).limit(1).execute()
-                    existing = []
-                    if street_row.data and 'positions' in street_row.data[0] and street_row.data[0]['positions']:
-                        existing = list(street_row.data[0]['positions'])
-                    existing.append(pos['id'])
+                    raw = street_row.data[0].get('positions') if street_row.data else None
+                    existing = MapsService._append_pos_id(raw, pos['id'])
                     supabase.table("Streets").update({"positions": existing}).eq("id", data.street_id).execute()
                 except Exception:
                     pass
@@ -505,7 +552,7 @@ class MapsService:
                             try:
                                 sr = supabase.table("Streets").select("positions").eq("id", sid).limit(1).execute()
                                 if sr.data:
-                                    existing = [i for i in (sr.data[0].get('positions') or []) if i != pos_id]
+                                    existing = MapsService._remove_pos_id(sr.data[0].get('positions'), pos_id)
                                     supabase.table("Streets").update({"positions": existing}).eq("id", sid).execute()
                             except Exception:
                                 pass
@@ -515,9 +562,9 @@ class MapsService:
                             try:
                                 sr = supabase.table("Streets").select("positions").eq("id", sid).limit(1).execute()
                                 if sr.data:
-                                    existing = list(sr.data[0].get('positions') or [])
-                                    if pos_id not in existing:
-                                        existing.append(pos_id)
+                                    raw = sr.data[0].get('positions')
+                                    if pos_id not in MapsService._flatten_positions(raw):
+                                        existing = MapsService._append_pos_id(raw, pos_id)
                                         supabase.table("Streets").update({"positions": existing}).eq("id", sid).execute()
                             except Exception:
                                 pass
@@ -535,9 +582,9 @@ class MapsService:
                         try:
                             sr = supabase.table("Streets").select("positions").eq("id", sid).limit(1).execute()
                             if sr.data:
-                                existing = list(sr.data[0].get('positions') or [])
-                                if pos['id'] not in existing:
-                                    existing.append(pos['id'])
+                                raw = sr.data[0].get('positions')
+                                if pos['id'] not in MapsService._flatten_positions(raw):
+                                    existing = MapsService._append_pos_id(raw, pos['id'])
                                     supabase.table("Streets").update({"positions": existing}).eq("id", sid).execute()
                         except Exception:
                             pass
@@ -891,7 +938,7 @@ class MapsService:
         all_street_ids = sorted({int(s) for g in nearest_groups for s in (g.get("streets") or [])})
         if all_street_ids:
             sres = supabase.table("Streets").select("id, positions").in_("id", all_street_ids).execute()
-            street_positions = {s["id"]: [int(p) for p in (s.get("positions") or [])] for s in (sres.data or [])}
+            street_positions = {s["id"]: MapsService._flatten_positions(s.get("positions")) for s in (sres.data or [])}
             group_pos_ids: dict = {}
             all_pos_ids: set = set()
             for g in nearest_groups:
@@ -1269,9 +1316,9 @@ class MapsService:
                     try:
                         street_row = supabase.table("Streets").select("positions").eq("id", sid).limit(1).execute()
                         if street_row.data:
-                            existing = list(street_row.data[0].get('positions') or [])
-                            if position_id in existing:
-                                existing = [i for i in existing if i != position_id]
+                            raw = street_row.data[0].get('positions')
+                            if position_id in MapsService._flatten_positions(raw):
+                                existing = MapsService._remove_pos_id(raw, position_id)
                                 supabase.table("Streets").update({"positions": existing}).eq("id", sid).execute()
                     except Exception:
                         pass
