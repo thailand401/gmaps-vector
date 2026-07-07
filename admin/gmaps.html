@@ -377,6 +377,33 @@
       font-size: 16px; line-height: 1; flex: 0 0 auto;
     }
     .es-edge-block select { width: 100%; }
+    #esStartPopup {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.35);
+      z-index: 30;
+      align-items: center; justify-content: center;
+    }
+    #esStartPopup.show { display: flex; }
+    #esStartPopup .es-start-card {
+      background: #fff; border-radius: 12px; padding: 18px;
+      width: 300px; box-shadow: 0 4px 24px rgba(0,0,0,.3);
+    }
+    #esStartPopup h4 { font-size: 15px; margin: 0 0 6px; color: #202124; }
+    #esStartPopup .es-start-hint { font-size: 12px; color: #5f6368; margin: 0 0 10px; }
+    #esStartPopup select {
+      width: 100%; border: 1px solid #d0d0d0; border-radius: 8px;
+      padding: 6px 8px; font-size: 13px; background: #fafafa; outline: none;
+    }
+    #esStartPopup .es-start-actions { display: flex; gap: 8px; margin-top: 12px; }
+    #esStartPopup .es-start-actions button {
+      flex: 1; border: none; border-radius: 8px; padding: 8px 14px;
+      font-size: 13px; cursor: pointer; font-weight: 600;
+    }
+    #esStartConfirm { background: #34a853; color: #fff; }
+    #esStartConfirm:hover { background: #2d9248; }
+    #esStartCancel { background: #f1f3f4; color: #3c4043; }
+    #esStartCancel:hover { background: #e2e4e6; }
     #editStreetModal .modal-actions button {
       border: none; border-radius: 8px; padding: 8px 14px;
       font-size: 13px; cursor: pointer; font-weight: 600; flex: 1;
@@ -631,6 +658,19 @@
   </div>
 </div>
 
+<!-- Popup xác nhận điểm đầu của cạnh trước khi nội suy thứ tự -->
+<div id="esStartPopup">
+  <div class="es-start-card">
+    <h4>Điểm đầu của cạnh</h4>
+    <p class="es-start-hint">Chọn điểm bắt đầu. Thứ tự các điểm còn lại sẽ được nội suy từ điểm này.</p>
+    <select id="esStartPopupSel" size="6"></select>
+    <div class="es-start-actions">
+      <button id="esStartConfirm">Tạo cạnh</button>
+      <button id="esStartCancel">Huỷ</button>
+    </div>
+  </div>
+</div>
+
 <!-- Leaflet JS -->
 <script src="js/auth.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -690,6 +730,7 @@ let selectedStreetId = null; // đường đang chọn trên toolbar (để sử
 let esEditId         = null; // street id đang sửa trong modal
 let esStreetPoints   = [];   // [{id,lat,lng}] các point của street đang sửa
 let esEdges          = [];   // [{ids:[+id...], oneway:bool}] các cạnh của đường (positions 2-D)
+let esPendingEdge    = null; // {ids:[+id...], oneway} cạnh đang chờ chọn điểm đầu ở popup
 let esHiliteMarkers  = [];   // marker đang tô sáng theo lựa chọn trong dropdown điểm
 let pointPickMode   = null;  // 'start' | 'end' | null — chế độ chọn điểm đầu/đích
 let startPickMarker = null, endPickMarker = null;   // marker cờ người dùng đặt
@@ -2203,17 +2244,51 @@ function esRenderEdges() {
   document.getElementById('esEdgesCount').textContent = `(${esEdges.length})`;
 }
 
-// Thêm 1 cạnh từ các điểm đang chọn ở dropdown master
+// Thêm 1 cạnh từ các điểm đang chọn ở dropdown master → mở popup chọn điểm đầu
 function esAddEdge() {
   const sel = document.getElementById('esAllPosSel');
   const ids = [...sel.selectedOptions].map(o => Math.abs(parseInt(o.value))).filter(v => !Number.isNaN(v));
   if (ids.length < 2) { showToast('Chọn ít nhất 2 điểm ở danh sách trên để tạo cạnh'); return; }
   const oneway = document.getElementById('esEdgeOneway').checked;
-  esEdges.push({ ids, oneway });
+  esPendingEdge = { ids, oneway };
+
+  // đổ popup: liệt kê các điểm đã chọn để user xác nhận điểm đầu
+  const popSel = document.getElementById('esStartPopupSel');
+  popSel.innerHTML = '';
+  ids.forEach(id => {
+    const p = esStreetPoints.find(pt => pt.id === id);
+    const o = document.createElement('option');
+    o.value = String(id);
+    o.textContent = p ? `#${id} (${p.lat.toFixed(4)}, ${p.lng.toFixed(4)})` : `#${id}`;
+    popSel.appendChild(o);
+  });
+  popSel.selectedIndex = 0;
+  document.getElementById('esStartPopup').classList.add('show');
+}
+
+// Xác nhận điểm đầu ở popup → nội suy thứ tự các điểm còn lại rồi tạo cạnh
+function esConfirmStartEdge() {
+  if (!esPendingEdge) { esCloseStartPopup(); return; }
+  const startId = parseInt(document.getElementById('esStartPopupSel').value);
+  if (Number.isNaN(startId)) { showToast('Chọn điểm đầu'); return; }
+  const subset = esPendingEdge.ids
+    .map(id => esStreetPoints.find(p => p.id === id))
+    .filter(Boolean);
+  const ordered = orderPointsFromStart(subset, startId).map(p => p.id);
+  const finalIds = ordered.length ? ordered : esPendingEdge.ids;
+  esEdges.push({ ids: finalIds, oneway: esPendingEdge.oneway });
   esRenderEdges();
+  esCloseStartPopup();
+  const sel = document.getElementById('esAllPosSel');
   sel.selectedIndex = -1;
   document.getElementById('esEdgeOneway').checked = false;
   esClearHighlight();
+}
+
+// Đóng popup chọn điểm đầu
+function esCloseStartPopup() {
+  document.getElementById('esStartPopup').classList.remove('show');
+  esPendingEdge = null;
 }
 
 // Tìm marker trên map theo id point
@@ -2514,6 +2589,9 @@ function setupUIListeners() {
   document.getElementById('esCloseX').addEventListener('click', closeEditStreetModal);
   document.getElementById('esAllPosSel').addEventListener('change', function () { esHighlightFromSelect(this); });
   document.getElementById('esAddEdge').addEventListener('click', esAddEdge);
+  document.getElementById('esStartPopupSel').addEventListener('change', function () { esHighlightFromSelect(this); });
+  document.getElementById('esStartConfirm').addEventListener('click', esConfirmStartEdge);
+  document.getElementById('esStartCancel').addEventListener('click', esCloseStartPopup);
   document.getElementById('btnCreateDistrict').addEventListener('click', onCreateDistrict);
   document.getElementById('btnCreateStreet').addEventListener('click', onCreateStreet);
   document.getElementById('btnAddNearby').addEventListener('click', addNearbyStreet);
